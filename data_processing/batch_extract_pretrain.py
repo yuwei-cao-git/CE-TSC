@@ -9,18 +9,25 @@ import subprocess
 from tqdm import tqdm
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
+from pyproj import Transformer
+
+# Global transformer: from Canada Lambert (3978) to UTM 18N (2959)
+transformer = Transformer.from_crs("EPSG:3978", "EPSG:2959", always_xy=True)
 
 
 def process_single_plot(laz_path, row, output_folder, target_n=7168):
-    center_x, center_y = row["x"], row["y"]
+    # 1. Transform coordinates to match the LiDAR file (2959)
+    # NTEMS (3978) -> SPL (2959)
+    center_x_2959, center_y_2959 = transformer.transform(row["x"], row["y"])
+
     species_id = int(row["label"])
 
-    # Define PDAL Pipeline
+    # 2. Use the TRANSFORMED coordinates for the crop
     pipeline_json = [
         {"type": "readers.las", "filename": str(laz_path)},
         {
             "type": "filters.crop",
-            "point": f"POINT({center_x} {center_y})",
+            "point": f"POINT({center_x_2959} {center_y_2959})",
             "distance": 11.28,
         },
         {"type": "filters.range", "limits": "Z(2:)"},
@@ -30,20 +37,19 @@ def process_single_plot(laz_path, row, output_folder, target_n=7168):
         {"type": "readers.las", "filename": str(laz_path)},
         {
             "type": "filters.crop",
-            "point": f"POINT({center_x} {center_y})",
+            "point": f"POINT({center_x_2959} {center_y_2959})",
             "distance": 11.28,
         },
     ]
 
     try:
-        # Denominator for CC
         pipe_raw = pdal.Pipeline(json.dumps(pipeline_raw_json))
         pipe_raw.execute()
         total_n = len(pipe_raw.arrays[0])
-        if total_n == 0:
-            return None
 
-        # Canopy points
+        if total_n == 0:
+            return None  # Coordinate is still outside this specific tile
+
         pipe_canopy = pdal.Pipeline(json.dumps(pipeline_json))
         pipe_canopy.execute()
         pts = pipe_canopy.arrays[0]
@@ -52,17 +58,21 @@ def process_single_plot(laz_path, row, output_folder, target_n=7168):
         if canopy_n < target_n:
             return None
 
-        # Compute metrics
+        # 3. Structural metrics and normalization
         cc = (canopy_n / total_n) * 100
         ch = np.percentile(pts["Z"], 95)
 
-        # Process coordinates
-        data = np.vstack((pts["X"] - center_x, pts["Y"] - center_y, pts["Z"])).T
+        # Relative centering (Standard for PointNeXt)
+        data = np.vstack(
+            (pts["X"] - center_x_2959, pts["Y"] - center_y_2959, pts["Z"])
+        ).T
+
+        # Fixed-point sampling (7168)
         idx = np.random.choice(data.shape[0], target_n, replace=False)
         final_pts = data[idx].astype(np.float32)
 
-        # SAVE IMMEDIATELY TO SCRATCH
-        npy_name = f"{species_id}_{int(center_x)}_{int(center_y)}.npy"
+        # Save Logic (Absolute Path)
+        npy_name = f"{species_id}_{int(row['x'])}_{int(row['y'])}.npy"
         species_dir = Path(output_folder) / str(species_id)
         species_dir.mkdir(parents=True, exist_ok=True)
         npy_path = species_dir / npy_name
