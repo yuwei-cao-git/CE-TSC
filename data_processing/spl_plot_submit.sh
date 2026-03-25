@@ -11,7 +11,7 @@ set -euo pipefail
 
 # Create log and output directories
 mkdir -p logs
-OUTPUT_DIR="$SCRATCH/ontario_pretrain_npy"
+OUTPUT_DIR="$SCRATCH/ntems/ontario_pretrain_npy"
 mkdir -p "$OUTPUT_DIR"
 
 # Setup Environment
