@@ -57,8 +57,9 @@ def process_single_plot(laz_path, row, output_folder, transformer, target_n=7168
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--input_gpkg", type=True, required=True)
-    parser.add_argument("--output_folder", type=True, required=True)
+    # Fixed: Changed type=True to type=str
+    parser.add_argument("--input_gpkg", type=str, required=True)
+    parser.add_argument("--output_folder", type=str, required=True)
     parser.add_argument("--total_chunks", type=int, required=True)
     parser.add_argument("--chunk_idx", type=int, required=True)
     parser.add_argument("--num_workers", type=int, default=8)
