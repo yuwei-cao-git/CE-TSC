@@ -23,7 +23,7 @@ source "$SLURM_TMPDIR/env/bin/activate"
 # Install requirements to the local node environment
 pip install --no-index --upgrade pip
 pip install --no-index numpy pandas geopandas tqdm 
-pip install pdal
+pip install pdal wget
 
 # Run the batch script
 # We pass the index and total chunks to split the unique tiles
