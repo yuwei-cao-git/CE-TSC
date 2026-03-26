@@ -124,7 +124,15 @@ def main():
     unique_tiles = gdf["Tilename"].unique()
     chunk_tiles = np.array_split(unique_tiles, args.total_chunks)[args.chunk_idx]
 
-    tmp_dir = Path(os.environ.get("SLURM_TMPDIR", "/tmp"))
+    # Inside main()
+    tmp_env = os.environ.get("SLURM_TMPDIR")
+    if tmp_env:
+        # Create a specific 'downloads' folder inside the Slurm temp space
+        tmp_dir = Path(tmp_env) / "working"
+        tmp_dir.mkdir(parents=True, exist_ok=True)
+    else:
+        tmp_dir = Path("./local_test_dir")
+        tmp_dir.mkdir(exist_ok=True)
     metadata = []
 
     for tile_name in tqdm(chunk_tiles, desc=f"Batch {args.chunk_idx}"):
@@ -137,7 +145,7 @@ def main():
 
         # Download Check
         if not local_laz.exists():
-            subprocess.run(["wget", "-q", "-O", str(local_laz), url], check=False)
+            subprocess.run(["wget", "-O", str(local_laz), url], check=False)
 
         if not local_laz.exists() or local_laz.stat().st_size == 0:
             print(f"ERROR: Could not download {url}")
