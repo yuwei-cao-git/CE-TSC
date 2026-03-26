@@ -90,9 +90,14 @@ def main():
     chunk_tiles = np.array_split(unique_tiles, args.total_chunks)[args.chunk_idx]
 
     # Use SLURM_TMPDIR correctly
-    tmp_base = os.environ.get("SLURM_TMPDIR", "/tmp")
-    tmp_dir = Path(tmp_base) / f"job_{args.chunk_idx}"
-    tmp_dir.mkdir(parents=True, exist_ok=True)
+    tmp_env = os.environ.get("SLURM_TMPDIR")
+    if tmp_env:
+        # Create a specific 'downloads' folder inside the Slurm temp space
+        tmp_dir = Path(tmp_env) / "tmp"
+        tmp_dir.mkdir(parents=True, exist_ok=True)
+    else:
+        tmp_dir = Path("./local_test_dir")
+        tmp_dir.mkdir(exist_ok=True)
 
     metadata = []
 
