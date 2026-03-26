@@ -23,7 +23,8 @@ source "$SLURM_TMPDIR/env/bin/activate"
 
 # 4. Install requirements (Use --no-index to use cluster's pre-cached wheels)
 pip install --no-index --upgrade pip
-pip install --no-index numpy pandas geopandas tqdm pyproj
+pip install numpy pyproj 
+pip install --no-index pandas geopandas tqdm 
 # If PDAL isn't in the scipy-stack, install it via pip:
 pip install --no-index pdal || pip install pdal
 
