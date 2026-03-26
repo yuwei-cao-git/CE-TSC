@@ -6,64 +6,39 @@ import geopandas as gpd
 import pdal
 import json
 import subprocess
-import re
 from tqdm import tqdm
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
-from pyproj import Transformer
 
 
-def get_native_epsg(laz_path):
-    """Detects the EPSG code from LAZ/COPC metadata (Fixed for PDAL 2.x)."""
+def process_single_plot(laz_path, row, output_folder, target_n=7168):
+    """Clips using RAW coordinates from GPKG with NO transformation."""
+    center_x, center_y = row["x"], row["y"]
+    species_id = int(row["label"])
+
+    # PDAL Pipelines
+    crop_opt = {
+        "type": "filters.crop",
+        "point": f"POINT({center_x} {center_y})",
+        "distance": 11.28,
+    }
+
     try:
-        pipeline = pdal.Pipeline(
-            json.dumps([{"type": "readers.las", "filename": str(laz_path), "count": 1}])
-        )
-        pipeline.execute()
-
-        # PDAL behavior varies: some versions return dict, some return JSON string
-        meta = pipeline.metadata
-        if isinstance(meta, str):
-            meta = json.loads(meta)
-
-        srs = meta["metadata"]["readers.las"]["srs"]["compoundwkt"]
-        match = re.search(r'EPSG",(\d+)', srs)
-        return f"EPSG:{match.group(1)}" if match else "EPSG:2959"
-    except Exception as e:
-        print(
-            f"CRS Detection Warning for {laz_path.name}: {e}. Falling back to EPSG:2959."
-        )
-        return "EPSG:2959"
-
-
-def process_single_plot(laz_path, row, output_folder, transformer, target_n=7168):
-    """Clips and samples a plot. Saves immediately to Scratch."""
-    try:
-        center_x_tile, center_y_tile = transformer.transform(row["x"], row["y"])
-        species_id = int(row["label"])
-
-        # PDAL Pipelines
-        p_crop = {
-            "type": "filters.crop",
-            "point": f"POINT({center_x_tile} {center_y_tile})",
-            "distance": 11.28,
-        }
-
-        # Pipeline 1: Raw for CC
+        # 1. Total points for CC
         pipe_raw = pdal.Pipeline(
-            json.dumps([{"type": "readers.las", "filename": str(laz_path)}, p_crop])
+            json.dumps([{"type": "readers.las", "filename": str(laz_path)}, crop_opt])
         )
         pipe_raw.execute()
         total_n = len(pipe_raw.arrays[0])
         if total_n == 0:
             return None
 
-        # Pipeline 2: Canopy for Points
+        # 2. Canopy points (>2m)
         pipe_canopy = pdal.Pipeline(
             json.dumps(
                 [
                     {"type": "readers.las", "filename": str(laz_path)},
-                    p_crop,
+                    crop_opt,
                     {"type": "filters.range", "limits": "Z(2:)"},
                 ]
             )
@@ -75,19 +50,17 @@ def process_single_plot(laz_path, row, output_folder, transformer, target_n=7168
         if canopy_n < target_n:
             return None
 
-        # Metrics and Sampling
-        data = np.vstack(
-            (pts["X"] - center_x_tile, pts["Y"] - center_y_tile, pts["Z"])
-        ).T
+        # 3. Sampling and Relative Centering
+        # (X - center) makes the tree trunk center at 0 in the point cloud
+        data = np.vstack((pts["X"] - center_x, pts["Y"] - center_y, pts["Z"])).T
         idx = np.random.choice(data.shape[0], target_n, replace=False)
         final_pts = data[idx].astype(np.float32)
 
-        # Output logic
-        npy_name = f"{species_id}_{int(row['x'])}_{int(row['y'])}.npy"
+        # 4. Save to Scratch
+        npy_name = f"{species_id}_{int(center_x)}_{int(center_y)}.npy"
         species_dir = Path(output_folder) / str(species_id)
         species_dir.mkdir(parents=True, exist_ok=True)
         npy_path = species_dir / npy_name
-
         np.save(str(npy_path), final_pts)
 
         return {
@@ -116,42 +89,35 @@ def main():
     unique_tiles = gdf["Tilename"].unique()
     chunk_tiles = np.array_split(unique_tiles, args.total_chunks)[args.chunk_idx]
 
-    # Securely setup tmp_dir
-    tmp_base = os.environ.get("SLURM_TMPDIR", "/tmp")
-    tmp_dir = Path(tmp_base) / f"job_chunk_{args.chunk_idx}"
-    tmp_dir.mkdir(parents=True, exist_ok=True)
+    # Use SLURM_TMPDIR correctly
+    tmp_env = os.environ.get("SLURM_TMPDIR")
+    if tmp_env:
+        # Create a specific 'downloads' folder inside the Slurm temp space
+        tmp_dir = Path(tmp_env) / "tmp"
+        tmp_dir.mkdir(parents=True, exist_ok=True)
+    else:
+        tmp_dir = Path("./local_test_dir")
+        tmp_dir.mkdir(exist_ok=True)
 
     metadata = []
 
-    for tile_name in tqdm(chunk_tiles):
+    for tile_name in tqdm(chunk_tiles, desc=f"Batch {args.chunk_idx}"):
         tile_df = gdf[gdf["Tilename"] == tile_name]
         url = tile_df["Download_H"].iloc[0]
 
-        # Use exact name from URL
+        # DYNAMIC FILENAME FIX: Get actual name from URL
         local_laz = tmp_dir / url.split("/")[-1]
 
-        # Download with verification
+        # Download
         if not local_laz.exists():
             subprocess.run(["wget", "-q", "-O", str(local_laz), url], check=False)
 
         if not local_laz.exists() or local_laz.stat().st_size < 1000:
             continue
 
-        # Setup Transformer for this specific tile
-        native_epsg = get_native_epsg(local_laz)
-        tile_transformer = Transformer.from_crs(
-            "EPSG:3978", native_epsg, always_xy=True
-        )
-
         with ThreadPoolExecutor(max_workers=args.num_workers) as executor:
             futures = [
-                executor.submit(
-                    process_single_plot,
-                    local_laz,
-                    row,
-                    args.output_folder,
-                    tile_transformer,
-                )
+                executor.submit(process_single_plot, local_laz, row, args.output_folder)
                 for _, row in tile_df.iterrows()
             ]
             for f in futures:
@@ -159,11 +125,10 @@ def main():
                 if res:
                     metadata.append(res)
 
-        # Cleanup
+        # Cleanup immediately to save node space
         if local_laz.exists():
             local_laz.unlink()
 
-    # Save metadata chunk
     if metadata:
         pd.DataFrame(metadata).to_csv(f"meta_batch_{args.chunk_idx}.csv", index=False)
 
