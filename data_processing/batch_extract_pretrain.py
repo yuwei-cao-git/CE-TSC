@@ -6,6 +6,7 @@ import geopandas as gpd
 import pdal
 import json
 import subprocess
+import re
 from tqdm import tqdm
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
@@ -13,38 +14,40 @@ from pyproj import Transformer
 
 
 def get_native_epsg(laz_path):
-    """Detects the EPSG code of the LAS/LAZ file using PDAL metadata."""
+    """Detects the EPSG code from the LAZ/COPC metadata."""
     try:
+        # We only need to read the metadata header
         pipeline = pdal.Pipeline(
-            json.dumps(
-                [
-                    {"type": "readers.las", "filename": str(laz_path)},
-                    {"type": "filters.stats", "count": 1},
-                ]
-            )
+            json.dumps([{"type": "readers.las", "filename": str(laz_path), "count": 1}])
         )
         pipeline.execute()
         metadata = json.loads(pipeline.metadata)
-        # Try to find the EPSG in the reader metadata
         srs = metadata["metadata"]["readers.las"]["srs"]["compoundwkt"]
-        # Look for the EPSG:XXXX string
-        if "EPSG" in srs:
-            import re
 
-            match = re.search(r'EPSG",(\d+)', srs)
-            if match:
-                return f"EPSG:{match.group(1)}"
-        return "EPSG:2959"  # Fallback to UTM 18N if detection fails
-    except:
+        # Search for EPSG code
+        match = re.search(r'EPSG",(\d+)', srs)
+        if match:
+            return f"EPSG:{match.group(1)}"
+        return "EPSG:2959"  # Default fallback for Ontario SPL
+    except Exception as e:
+        print(f"Metadata error on {laz_path.name}: {e}")
         return "EPSG:2959"
 
 
 def process_single_plot(laz_path, row, output_folder, transformer, target_n=7168):
-    """Uses the provided transformer to move NTEMS 3978 to Tile's Native CRS."""
-    # Transform center from 3978 to Tile CRS (e.g., 2959)
+    """Clips, filters, samples, and saves a single plot."""
+    # NTEMS (3978) -> Tile Native CRS (e.g., 2959)
     center_x_tile, center_y_tile = transformer.transform(row["x"], row["y"])
     species_id = int(row["label"])
 
+    p_raw = [
+        {"type": "readers.las", "filename": str(laz_path)},
+        {
+            "type": "filters.crop",
+            "point": f"POINT({center_x_tile} {center_y_tile})",
+            "distance": 11.28,
+        },
+    ]
     p_canopy = [
         {"type": "readers.las", "filename": str(laz_path)},
         {
@@ -54,54 +57,54 @@ def process_single_plot(laz_path, row, output_folder, transformer, target_n=7168
         },
         {"type": "filters.range", "limits": "Z(2:)"},
     ]
-    p_raw = [
-        {"type": "readers.las", "filename": str(laz_path)},
-        {
-            "type": "filters.crop",
-            "point": f"POINT({center_x_tile} {center_y_tile})",
-            "distance": 11.28,
-        },
-    ]
 
     try:
-        # Get counts for CC
+        # Get raw count for CC denominator
         pipe_r = pdal.Pipeline(json.dumps(p_raw))
         pipe_r.execute()
-        total_n = len(pipe_raw.arrays[0])
+        total_n = len(pipe_r.arrays[0])
         if total_n == 0:
             return None
 
-        # Get Points
+        # Get canopy points
         pipe_c = pdal.Pipeline(json.dumps(p_canopy))
         pipe_c.execute()
-        pts = pipe_canopy.arrays[0]
+        pts = pipe_c.arrays[0]
         canopy_n = len(pts)
 
         if canopy_n < target_n:
             return None
 
-        # Feature Prep (Center X/Y relative to plot)
+        # Metrics
+        cc = (canopy_n / total_n) * 100
+        ch = np.percentile(pts["Z"], 95)
+
+        # Tensor: Center relative to plot center, keep Z as HAG
         data = np.vstack(
             (pts["X"] - center_x_tile, pts["Y"] - center_y_tile, pts["Z"])
         ).T
+
+        # Fixed point sampling
         idx = np.random.choice(data.shape[0], target_n, replace=False)
         final_pts = data[idx].astype(np.float32)
 
-        # Output
+        # Immediate Save to Scratch
         npy_name = f"{species_id}_{int(row['x'])}_{int(row['y'])}.npy"
         species_dir = Path(output_folder) / str(species_id)
         species_dir.mkdir(parents=True, exist_ok=True)
         npy_path = species_dir / npy_name
+
         np.save(str(npy_path), final_pts)
 
         return {
             "plot_id": npy_name,
             "label": species_id,
             "ecoregion": row.get("SITE_REGION_O", "unknown"),
-            "canopy_cover": (canopy_n / total_n) * 100,
-            "canopy_height": np.percentile(pts["Z"], 95),
+            "canopy_cover": cc,
+            "canopy_height": ch,
+            "npy_path": str(npy_path),
         }
-    except:
+    except Exception:
         return None
 
 
@@ -114,6 +117,9 @@ def main():
     parser.add_argument("--num_workers", type=int, default=16)
     args = parser.parse_args()
 
+    args.output_folder = os.path.abspath(args.output_folder)
+
+    # Load Sampling Plan
     gdf = gpd.read_file(args.input_gpkg, layer="sampling_plan_10k")
     unique_tiles = gdf["Tilename"].unique()
     chunk_tiles = np.array_split(unique_tiles, args.total_chunks)[args.chunk_idx]
@@ -121,24 +127,27 @@ def main():
     tmp_dir = Path(os.environ.get("SLURM_TMPDIR", "/tmp"))
     metadata = []
 
-    for tile_name in tqdm(chunk_tiles):
+    for tile_name in tqdm(chunk_tiles, desc=f"Batch {args.chunk_idx}"):
         tile_df = gdf[gdf["Tilename"] == tile_name]
-        local_laz = tmp_dir / f"{tile_name}.laz"
+        url = tile_df["Download_H"].iloc[0]
 
-        # Download
-        subprocess.run(
-            ["wget", "-q", "-O", str(local_laz), tile_df["Download_H"].iloc[0]]
-        )
+        # DYNAMIC FILENAME LOGIC: Extract actual filename from the URL
+        remote_filename = url.split("/")[-1]
+        local_laz = tmp_dir / remote_filename
+
+        # Download Check
         if not local_laz.exists():
+            subprocess.run(["wget", "-q", "-O", str(local_laz), url], check=False)
+
+        if not local_laz.exists() or local_laz.stat().st_size == 0:
+            print(f"ERROR: Could not download {url}")
             continue
 
-        # --- DYNAMIC CRS DETECTION ---
+        # DYNAMIC CRS DETECTION
         native_epsg = get_native_epsg(local_laz)
-        # Create a specific transformer for this tile
         tile_transformer = Transformer.from_crs(
             "EPSG:3978", native_epsg, always_xy=True
         )
-        # -----------------------------
 
         with ThreadPoolExecutor(max_workers=args.num_workers) as executor:
             futures = [
@@ -156,8 +165,11 @@ def main():
                 if res:
                     metadata.append(res)
 
-        local_laz.unlink()
+        # Instant Cleanup of the large tile
+        if local_laz.exists():
+            local_laz.unlink()
 
+    # Save metadata for this batch
     if metadata:
         pd.DataFrame(metadata).to_csv(f"meta_batch_{args.chunk_idx}.csv", index=False)
 
