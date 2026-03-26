@@ -5,7 +5,7 @@
 #SBATCH --array=0-1                # Adjust based on tile count (100 parallel chunks)
 #SBATCH --cpus-per-task=16          # Multi-threading for PDAL/Python
 #SBATCH --mem=64G                   # Memory for tile processing
-#SBATCH --time=1:00:00             # Downloading/processing takes time
+#SBATCH --time=0:30:00             # Downloading/processing takes time
 
 set -euo pipefail
 
