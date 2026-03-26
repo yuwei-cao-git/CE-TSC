@@ -4,11 +4,11 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from pyproj import Transformer
 
-# Custom logger to force immediate writing to a text file
+# Force immediate write to file
 def log_message(message, log_file):
     with open(log_file, "a") as f:
         f.write(message + "\n")
-    print(message) # Still print to .out
+    print(message)
     sys.stdout.flush()
 
 def get_native_epsg(laz_path):
@@ -39,7 +39,6 @@ def process_single_plot(laz_path, row, output_folder, transformer, target_n=7168
         pts = pipe.arrays[0]
         if len(pts) < target_n: return f"SKIP_DENSITY_{len(pts)}"
 
-        # Save logic
         data = np.vstack((pts["X"] - cx_tile, pts["Y"] - cy_tile, pts["Z"])).T
         idx = np.random.choice(data.shape[0], target_n, replace=False)
         
@@ -56,11 +55,11 @@ def main():
     parser.add_argument("--output_folder", type=str, required=True)
     parser.add_argument("--total_chunks", type=int, required=True)
     parser.add_argument("--chunk_idx", type=int, required=True)
+    parser.add_argument("--num_workers", type=int, default=8) # Defaulting to 8
     args = parser.parse_args()
 
-    # Define a log file specific to this chunk
     chunk_log = f"log_chunk_{args.chunk_idx}.txt"
-    log_message(f"--- Starting Job Chunk {args.chunk_idx} ---", chunk_log)
+    log_message(f"--- Job Chunk {args.chunk_idx} Started ---", chunk_log)
 
     out_dir = Path(args.output_folder).resolve()
     gdf = gpd.read_file(args.input_gpkg, layer="sampling_plan_10k")
@@ -77,19 +76,18 @@ def main():
         url = tile_df["Download_H"].iloc[0]
         local_laz = tmp_dir / url.split('/')[-1]
 
-        # Download
         log_message(f"Tile {i}: Downloading {tile_name}...", chunk_log)
-        dl = subprocess.run(["wget", "-q", "-O", str(local_laz), url])
+        subprocess.run(["wget", "-q", "-O", str(local_laz), url])
         
         if not local_laz.exists() or local_laz.stat().st_size < 1000:
-            log_message(f"  [!] Download Failed for {url}", chunk_log)
+            log_message(f"  [!] Download Failed: {url}", chunk_log)
             continue
 
         native_epsg = get_native_epsg(local_laz)
         trans = Transformer.from_crs("EPSG:3978", native_epsg, always_xy=True)
 
-        # Process
-        with ThreadPoolExecutor(max_workers=8) as executor: # Reduced workers for stability
+        # FIXED: Now uses args.num_workers
+        with ThreadPoolExecutor(max_workers=args.num_workers) as executor:
             futures = [executor.submit(process_single_plot, local_laz, r, out_dir, trans) for _, r in tile_df.iterrows()]
             for f in futures:
                 res = f.result()
@@ -101,9 +99,7 @@ def main():
                     log_message(f"  [!] Worker Error: {res}", chunk_log)
 
         if local_laz.exists(): local_laz.unlink()
-
-        # Immediate Status Update
-        log_message(f"  Summary: Saved={stats['SUCCESS']} | Empty={stats['EMPTY']} | LowDensity={stats['LOW_DENSITY']} | Errors={stats['ERR']}", chunk_log)
+        log_message(f"  Tile Result: Saved={stats['SUCCESS']} | Empty={stats['EMPTY']} | LowDensity={stats['LOW_DENSITY']}", chunk_log)
 
 if __name__ == "__main__":
     main()
