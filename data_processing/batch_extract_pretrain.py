@@ -20,7 +20,6 @@ def get_native_epsg(laz_path):
         ]))
         pipeline.execute()
         meta = pipeline.metadata
-        # Fix for PDAL version differences on clusters
         if isinstance(meta, str):
             meta = json.loads(meta)
             
@@ -28,61 +27,63 @@ def get_native_epsg(laz_path):
         match = re.search(r'EPSG",(\d+)', srs)
         return f"EPSG:{match.group(1)}" if match else "EPSG:2959"
     except Exception as e:
-        print(f"   [!] CRS Detection Warning for {laz_path.name}: {e}. Falling back to 2959.")
         return "EPSG:2959"
 
 def process_single_plot(laz_path, row, output_folder, transformer, target_n=7168):
-    """Transforms, Clips, Samples, and Saves a single plot."""
     try:
-        # 1. Transform NTEMS Lambert (3978) to Tile UTM (e.g., 2959)
         cx_tile, cy_tile = transformer.transform(row["x"], row["y"])
         species_id = int(row["label"])
 
-        # PDAL Crop Logic
+        # PDAL Crop Pipeline
         crop_config = {"type": "filters.crop", "point": f"POINT({cx_tile} {cy_tile})", "distance": 11.28}
         
-        # Pipeline A: Raw for CC denominator
+        # Raw for CC denominator (Total points in 400m2)
         p_raw = pdal.Pipeline(json.dumps([
             {"type": "readers.las", "filename": str(laz_path)}, crop_config
         ]))
         p_raw.execute()
         total_n = len(p_raw.arrays[0])
-        if total_n == 0: return None
+        if total_n == 0: return "SKIP: No points in crop"
 
-        # Pipeline B: Canopy for points (>2m)
+        # Canopy Pipeline (>2m)
         p_canopy = pdal.Pipeline(json.dumps([
-            {"type": "readers.las", "filename": str(laz_path)}, crop_config,
+            {"type": "readers.las", "filename": str(laz_path)}, 
+            crop_config,
             {"type": "filters.range", "limits": "Z(2:)"}
         ]))
         p_canopy.execute()
+        
+        if not p_canopy.arrays:
+            return "SKIP: No points in crop"
+
         pts = p_canopy.arrays[0]
         canopy_n = len(pts)
+        
+        if canopy_n < target_n:
+            return f"SKIP: Only {canopy_n} points found (need {target_n})"
 
-        if canopy_n < target_n: return None
-
-        # 2. Process Tensor (Relative center, Z as HAG)
+        # Relative centering and Sampling
         data = np.vstack((pts["X"] - cx_tile, pts["Y"] - cy_tile, pts["Z"])).T
         idx = np.random.choice(data.shape[0], target_n, replace=False)
-        final_pts = data[idx].astype(np.float32)
-
-        # 3. Absolute Path Save
+        
         npy_name = f"{species_id}_{int(row['x'])}_{int(row['y'])}.npy"
         species_dir = Path(output_folder) / str(species_id)
         species_dir.mkdir(parents=True, exist_ok=True)
-        npy_path = species_dir / npy_name
         
-        np.save(str(npy_path), final_pts)
+        save_path = species_dir / npy_name
+        np.save(str(save_path), data[idx].astype(np.float32))
 
+        # Return dict for metadata tracking
         return {
-            "plot_id": npy_name, 
-            "label": species_id, 
+            "plot_id": npy_name,
+            "label": species_id,
             "ecoregion": row.get("SITE_REGION_O", "unknown"),
-            "canopy_cover": (canopy_n / total_n) * 100, 
+            "canopy_cover": (canopy_n / total_n) * 100,
             "canopy_height": np.percentile(pts["Z"], 95),
-            "npy_path": str(npy_path)
+            "status": "SUCCESS"
         }
-    except Exception:
-        return None
+    except Exception as e:
+        return f"ERROR: {str(e)}"
 
 def main():
     parser = argparse.ArgumentParser()
@@ -105,7 +106,8 @@ def main():
     tmp_dir.mkdir(parents=True, exist_ok=True)
     
     metadata = []
-    success_count = 0
+    stats = {"SUCCESS": 0, "SKIP_DENSITY": 0, "SKIP_EMPTY": 0, "ERROR": 0}
+    tiles_processed = 0
 
     for tile_name in tqdm(chunk_tiles, desc=f"Batch {args.chunk_idx}"):
         tile_df = gdf[gdf["Tilename"] == tile_name]
@@ -119,31 +121,36 @@ def main():
         if not local_laz.exists() or local_laz.stat().st_size < 1000:
             continue
 
-        # Setup Dynamic Transformer for THIS tile
         native_epsg = get_native_epsg(local_laz)
         tile_transformer = Transformer.from_crs("EPSG:3978", native_epsg, always_xy=True)
 
         with ThreadPoolExecutor(max_workers=args.num_workers) as executor:
-            futures = [
-                executor.submit(process_single_plot, local_laz, row, args.output_folder, tile_transformer) 
-                for _, row in tile_df.iterrows()
-            ]
+            futures = [executor.submit(process_single_plot, local_laz, row, args.output_folder, tile_transformer) 
+                       for _, row in tile_df.iterrows()]
             for f in futures:
                 res = f.result()
-                if res: 
+                if isinstance(res, dict) and res.get("status") == "SUCCESS":
+                    stats["SUCCESS"] += 1
                     metadata.append(res)
-                    success_count += 1
+                elif "SKIP: Only" in str(res): 
+                    stats["SKIP_DENSITY"] += 1
+                elif "SKIP: No points" in str(res): 
+                    stats["SKIP_EMPTY"] += 1
+                else: 
+                    stats["ERROR"] += 1
 
-        # Delete large tile to free node space
+        tiles_processed += 1
         if local_laz.exists(): local_laz.unlink()
-        
-        # Periodic Heartbeat for log tracking
-        if success_count % 50 == 0 and success_count > 0:
-            print(f"  [Heartbeat] Batch {args.chunk_idx}: {success_count} plots saved.")
+
+        # Heartbeat every 10 tiles
+        if tiles_processed % 10 == 0:
+            print(f"\n[Heartbeat] Tiles: {tiles_processed}/{len(chunk_tiles)} | Saved: {stats['SUCCESS']} | Low Density: {stats['SKIP_DENSITY']} | Empty: {stats['SKIP_EMPTY']} | Errors: {stats['ERROR']}")
 
     # Save final CSV for this batch
     if metadata:
-        pd.DataFrame(metadata).to_csv(f"meta_batch_{args.chunk_idx}.csv", index=False)
+        out_csv = f"meta_batch_{args.chunk_idx}.csv"
+        pd.DataFrame(metadata).to_csv(out_csv, index=False)
+        print(f"Batch {args.chunk_idx} complete. Metadata saved to {out_csv}")
 
 if __name__ == "__main__":
     main()
