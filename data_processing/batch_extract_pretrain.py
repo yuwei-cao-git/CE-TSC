@@ -2,6 +2,7 @@ import os, argparse, numpy as np, pandas as pd, geopandas as gpd, pdal, json, su
 from tqdm import tqdm
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
+from pyproj import Transformer
 
 def log_message(message, log_file):
     with open(log_file, "a") as f:
@@ -9,47 +10,51 @@ def log_message(message, log_file):
     print(message)
     sys.stdout.flush()
 
-def get_native_epsg(laz_path):
+def get_tile_info(laz_path):
+    """Returns (EPSG, Bounds_Dict)"""
     try:
-        pipeline = pdal.Pipeline(json.dumps([{"type": "readers.las", "filename": str(laz_path), "count": 1}]))
-        pipeline.execute()
-        meta = pipeline.metadata
+        p = pdal.Pipeline(json.dumps([{"type": "readers.las", "filename": str(laz_path), "count": 1}]))
+        p.execute()
+        meta = p.metadata
         if isinstance(meta, str): meta = json.loads(meta)
+        
+        b = meta['metadata']['readers.las']
+        # Return bounds for logging
+        bounds = {"minx": b['minx'], "maxx": b['maxx'], "miny": b['miny'], "maxy": b['maxy']}
         
         srs = meta['metadata']['readers.las']['srs']['compoundwkt']
         match = re.search(r'EPSG",(\d+)', srs)
-        return f"EPSG:{match.group(1)}" if match else "EPSG:2959"
-    except:
-        return "EPSG:2959"
+        epsg = f"EPSG:{match.group(1)}" if match else "EPSG:2959"
+        return epsg, bounds
+    except Exception as e:
+        return "EPSG:2959", None
 
-def process_single_plot(laz_path, row, output_folder, target_n=7168):
+def process_single_plot(laz_path, row, output_folder, transformer, target_n=7168, debug_log=None):
     try:
-        # Use PRE-REPROJECTED coordinates from the row
-        cx_tile, cy_tile = row["geometry"].x, row["geometry"].y
-        # Keep original Lambert coords for filename consistency
-        orig_x, orig_y = int(row["x"]), int(row["y"])
+        # TRANSFORM
+        cx_tile, cy_tile = transformer.transform(row["x"], row["y"])
         species_id = int(row["label"])
+
+        # If debug_log is passed, we log the specific coordinates to check against bounds
+        if debug_log:
+            log_message(f"    [COORD] Lambert({row['x']:.2f}, {row['y']:.2f}) -> UTM({cx_tile:.2f}, {cy_tile:.2f})", debug_log)
 
         p_json = [
             {"type": "readers.las", "filename": str(laz_path)},
-            {"type": "filters.crop", "point": f"POINT({cx_tile} {cy_tile})", "distance": 11.28},
+            {"type": "filters.crop", "point": f"POINT({cx_tile} {cy_tile})", "distance": 15},
             {"type": "filters.range", "limits": "Z(2:)"}
         ]
-        
         pipe = pdal.Pipeline(json.dumps(p_json))
         pipe.execute()
         
-        if not pipe.arrays or len(pipe.arrays[0]) == 0:
-            return "SKIP_EMPTY"
-            
+        if not pipe.arrays: return "SKIP_EMPTY"
         pts = pipe.arrays[0]
-        if len(pts) < target_n:
-            return f"SKIP_DENSITY_{len(pts)}"
+        if len(pts) < target_n: return f"SKIP_DENSITY_{len(pts)}"
 
+        # Success - Save
         data = np.vstack((pts["X"] - cx_tile, pts["Y"] - cy_tile, pts["Z"])).T
         idx = np.random.choice(data.shape[0], target_n, replace=False)
-        
-        npy_path = Path(output_folder) / str(species_id) / f"{species_id}_{orig_x}_{orig_y}.npy"
+        npy_path = Path(output_folder) / str(species_id) / f"{species_id}_{int(row['x'])}_{int(row['y'])}.npy"
         npy_path.parent.mkdir(parents=True, exist_ok=True)
         np.save(str(npy_path), data[idx].astype(np.float32))
         return "SUCCESS"
@@ -66,54 +71,59 @@ def main():
     args = parser.parse_args()
 
     chunk_log = f"log_chunk_{args.chunk_idx}.txt"
-    log_message(f"--- Job Chunk {args.chunk_idx} Started ---", chunk_log)
+    log_message(f"--- Starting Job Chunk {args.chunk_idx} ---", chunk_log)
 
     out_dir = Path(args.output_folder).resolve()
     
-    # 1. Load GPKG (Explicitly set CRS if missing)
-    gdf = gpd.read_file(args.input_gpkg, layer="sampling_plan_10k")
-    if gdf.crs is None:
-        gdf.set_crs("EPSG:3978", inplace=True)
-        
-    unique_tiles = gdf["Tilename"].unique()
-    chunk_tiles = np.array_split(unique_tiles, args.total_chunks)[args.chunk_idx]
-    
+    # Check GPKG reading
+    try:
+        gdf = gpd.read_file(args.input_gpkg, layer="sampling_plan_10k")
+        log_message(f"GPKG Loaded. CRS: {gdf.crs} | Total plots: {len(gdf)}", chunk_log)
+    except Exception as e:
+        log_message(f"CRITICAL: GPKG Load Error: {e}", chunk_log)
+        return
+
+    chunk_tiles = np.array_split(gdf["Tilename"].unique(), args.total_chunks)[args.chunk_idx]
     tmp_dir = Path(os.environ.get("SLURM_TMPDIR", "/tmp")) / f"batch_{args.chunk_idx}"
     tmp_dir.mkdir(parents=True, exist_ok=True)
     
-    stats = {"SUCCESS": 0, "EMPTY": 0, "LOW_DENSITY": 0, "ERR": 0}
+    stats = {"SUCCESS": 0, "EMPTY": 0, "DENSITY": 0}
 
     for i, tile_name in enumerate(chunk_tiles):
-        # 2. Get subset for this tile
-        tile_df = gdf[gdf["Tilename"] == tile_name].copy()
+        tile_df = gdf[gdf["Tilename"] == tile_name]
         url = tile_df["Download_H"].iloc[0]
         local_laz = tmp_dir / url.split('/')[-1]
 
-        log_message(f"Tile {i}: {tile_name}...", chunk_log)
+        log_message(f"\nTile {i}: {tile_name}", chunk_log)
         subprocess.run(["wget", "-q", "-O", str(local_laz), url])
         
-        if not local_laz.exists() or local_laz.stat().st_size < 1000:
-            continue
+        if not local_laz.exists(): continue
 
-        # 3. REPROJECT SUBSET using Geopandas (more robust than pyproj transformer on clusters)
-        native_epsg = get_native_epsg(local_laz)
-        tile_df_reprojected = tile_df.to_crs(native_epsg)
+        # GET TILE INFO
+        native_epsg, bounds = get_tile_info(local_laz)
+        if bounds:
+            log_message(f"  [BOUNDS] X: {bounds['minx']:.1f} to {bounds['maxx']:.1f}", chunk_log)
+            log_message(f"  [BOUNDS] Y: {bounds['miny']:.1f} to {bounds['maxy']:.1f}", chunk_log)
+        
+        # Transformer
+        # We use a robust definition in case cluster database is weird
+        transformer = Transformer.from_crs("EPSG:3978", native_epsg, always_xy=True)
 
         with ThreadPoolExecutor(max_workers=args.num_workers) as executor:
-            # Pass reprojected rows
-            futures = [executor.submit(process_single_plot, local_laz, row, out_dir) 
-                       for _, row in tile_df_reprojected.iterrows()]
+            # We log coords for ONLY the first 3 plots of each tile to keep logs clean
+            futures = []
+            for j, (_, row) in enumerate(tile_df.iterrows()):
+                debug = chunk_log if j < 3 else None
+                futures.append(executor.submit(process_single_plot, local_laz, row, out_dir, transformer, 7168, debug))
+            
             for f in futures:
                 res = f.result()
                 if res == "SUCCESS": stats["SUCCESS"] += 1
                 elif "SKIP_EMPTY" in res: stats["EMPTY"] += 1
-                elif "SKIP_DENSITY" in res: stats["LOW_DENSITY"] += 1
-                else: 
-                    stats["ERR"] += 1
-                    log_message(f"  [!] Worker Error: {res}", chunk_log)
+                elif "SKIP_DENSITY" in res: stats["DENSITY"] += 1
 
-        if local_laz.exists(): local_laz.unlink()
-        log_message(f"  Tile Result: Saved={stats['SUCCESS']} | Empty={stats['EMPTY']}", chunk_log)
+        local_laz.unlink()
+        log_message(f"  Current Totals: Saved={stats['SUCCESS']} | Empty={stats['EMPTY']}", chunk_log)
 
 if __name__ == "__main__":
     main()
