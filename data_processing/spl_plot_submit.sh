@@ -16,6 +16,8 @@ mkdir -p logs "$OUTPUT_DIR"
 # 2. Environment Setup (Compute Canada/Alliance style)
 module load python/3.10 pdal scipy-stack
 
+rm -rf $SLURM_TMPDIR/env
+
 # 3. Virtual Environment in Job-Specific Local Storage
 # This prevents 100 jobs from clashing while reading the same env files
 virtualenv --no-download "$SLURM_TMPDIR/env"
