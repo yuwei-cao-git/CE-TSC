@@ -17,28 +17,49 @@ def get_native_epsg(laz_path):
         pipeline.execute()
         meta = pipeline.metadata
         if isinstance(meta, str): meta = json.loads(meta)
+        
+        # Get bounds to log for debugging
+        b = meta['metadata']['readers.las']
+        print(f"DEBUG: Tile Bounds X[{b['minx']}:{b['maxx']}] Y[{b['miny']}:{b['maxy']}]")
+        
         srs = meta['metadata']['readers.las']['srs']['compoundwkt']
         match = re.search(r'EPSG",(\d+)', srs)
         return f"EPSG:{match.group(1)}" if match else "EPSG:2959"
-    except: return "EPSG:2959"
+    except:
+        return "EPSG:2959"
 
 def process_single_plot(laz_path, row, output_folder, transformer, target_n=7168):
     try:
+        # TRANSFORM
         cx_tile, cy_tile = transformer.transform(row["x"], row["y"])
+        
+        # LOG FIRST PLOT COORDINATES FOR DEBUGGING
+        # This will show up in your log_chunk_X.txt
         species_id = int(row["label"])
 
+        # EXPLICIT PIPELINE
         p_json = [
             {"type": "readers.las", "filename": str(laz_path)},
-            {"type": "filters.crop", "point": f"POINT({cx_tile} {cy_tile})", "distance": 11.28},
+            {
+                "type": "filters.crop", 
+                "point": f"POINT({float(cx_tile)} {float(cy_tile)})", 
+                "distance": 15 # Slightly wider to catch near-edge plots
+            },
             {"type": "filters.range", "limits": "Z(2:)"}
         ]
+        
         pipe = pdal.Pipeline(json.dumps(p_json))
         pipe.execute()
         
-        if not pipe.arrays: return "SKIP_EMPTY"
+        if not pipe.arrays or len(pipe.arrays[0]) == 0:
+            # If this happens, the coordinates cx_tile/cy_tile are NOT inside the file bounds
+            return "SKIP_EMPTY"
+            
         pts = pipe.arrays[0]
-        if len(pts) < target_n: return f"SKIP_DENSITY_{len(pts)}"
+        if len(pts) < target_n:
+            return f"SKIP_DENSITY_{len(pts)}"
 
+        # CENTER AND SAVE
         data = np.vstack((pts["X"] - cx_tile, pts["Y"] - cy_tile, pts["Z"])).T
         idx = np.random.choice(data.shape[0], target_n, replace=False)
         

@@ -2,7 +2,7 @@
 #SBATCH --job-name=ont_pretrain
 #SBATCH --output=logs/ont_%A_%a.out
 #SBATCH --error=logs/ont_%A_%a.err
-#SBATCH --array=0-99
+#SBATCH --array=0-1
 #SBATCH --cpus-per-task=16
 #SBATCH --mem=64G
 #SBATCH --time=24:00:00
@@ -35,7 +35,7 @@ export PYTHONUNBUFFERED=1
 srun python batch_extract_pretrain.py \
     --input_gpkg "$SCRATCH/ntems/sampling_plan_10k.gpkg" \
     --output_folder "$OUTPUT_DIR" \
-    --total_chunks 100 \
+    --total_chunks 2 \
     --chunk_idx "$SLURM_ARRAY_TASK_ID" \
     --num_workers 8
 
