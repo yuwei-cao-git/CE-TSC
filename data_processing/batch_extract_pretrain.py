@@ -11,82 +11,75 @@ def log_message(message, log_file):
     sys.stdout.flush()
 
 def get_tile_info(laz_path):
-    """Returns (EPSG, Bounds_Dict)"""
     try:
         p = pdal.Pipeline(json.dumps([{"type": "readers.las", "filename": str(laz_path), "count": 1}]))
         p.execute()
         meta = p.metadata
         if isinstance(meta, str): meta = json.loads(meta)
-        
         b = meta['metadata']['readers.las']
-        # Return bounds for logging
         bounds = {"minx": b['minx'], "maxx": b['maxx'], "miny": b['miny'], "maxy": b['maxy']}
-        
         srs = meta['metadata']['readers.las']['srs']['compoundwkt']
+        # Extract EPSG code
         match = re.search(r'EPSG",(\d+)', srs)
-        epsg = f"EPSG:{match.group(1)}" if match else "EPSG:2959"
+        epsg = match.group(1) if match else "2959"
         return epsg, bounds
-    except Exception as e:
-        return "EPSG:2959", None
+    except: return "2959", None
 
 def process_single_plot(laz_path, row, output_folder, transformer, target_n=7168, debug_log=None):
     try:
-        # TRANSFORM
+        # TRANSFORM using the manual math bridge
         cx_tile, cy_tile = transformer.transform(row["x"], row["y"])
         species_id = int(row["label"])
 
-        # If debug_log is passed, we log the specific coordinates to check against bounds
         if debug_log:
-            log_message(f"    [COORD] Lambert({row['x']:.2f}, {row['y']:.2f}) -> UTM({cx_tile:.2f}, {cy_tile:.2f})", debug_log)
+            log_message(f"    [COORD] Lambert({row['x']:.1f}) -> UTM({cx_tile:.1f})", debug_log)
 
         p_json = [
             {"type": "readers.las", "filename": str(laz_path)},
-            {"type": "filters.crop", "point": f"POINT({cx_tile} {cy_tile})", "distance": 15},
+            {"type": "filters.crop", "point": f"POINT({cx_tile:.3f} {cy_tile:.3f})", "distance": 11.28},
             {"type": "filters.range", "limits": "Z(2:)"}
         ]
         pipe = pdal.Pipeline(json.dumps(p_json))
         pipe.execute()
         
-        if not pipe.arrays: return "SKIP_EMPTY"
+        if not pipe.arrays: return "EMPTY"
         pts = pipe.arrays[0]
-        if len(pts) < target_n: return f"SKIP_DENSITY_{len(pts)}"
+        if len(pts) < target_n: return "DENSITY"
 
-        # Success - Save
         data = np.vstack((pts["X"] - cx_tile, pts["Y"] - cy_tile, pts["Z"])).T
         idx = np.random.choice(data.shape[0], target_n, replace=False)
+        
         npy_path = Path(output_folder) / str(species_id) / f"{species_id}_{int(row['x'])}_{int(row['y'])}.npy"
         npy_path.parent.mkdir(parents=True, exist_ok=True)
         np.save(str(npy_path), data[idx].astype(np.float32))
         return "SUCCESS"
-    except Exception as e:
-        return f"ERROR_{str(e)}"
+    except Exception as e: return f"ERROR_{e}"
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--input_gpkg", type=str, required=True)
-    parser.add_argument("--output_folder", type=str, required=True)
+    parser.add_argument("--input_gpkg", type=True, required=True)
+    parser.add_argument("--output_folder", type=True, required=True)
     parser.add_argument("--total_chunks", type=int, required=True)
     parser.add_argument("--chunk_idx", type=int, required=True)
     parser.add_argument("--num_workers", type=int, default=8)
     args = parser.parse_args()
 
     chunk_log = f"log_chunk_{args.chunk_idx}.txt"
-    log_message(f"--- Starting Job Chunk {args.chunk_idx} ---", chunk_log)
-
-    out_dir = Path(args.output_folder).resolve()
+    log_message(f"--- Job Chunk {args.chunk_idx} Started ---", chunk_log)
     
-    # Check GPKG reading
-    try:
-        gdf = gpd.read_file(args.input_gpkg, layer="sampling_plan_10k")
-        log_message(f"GPKG Loaded. CRS: {gdf.crs} | Total plots: {len(gdf)}", chunk_log)
-    except Exception as e:
-        log_message(f"CRITICAL: GPKG Load Error: {e}", chunk_log)
-        return
-
+    out_dir = Path(args.output_folder).resolve()
+    gdf = gpd.read_file(args.input_gpkg, layer="sampling_plan_10k")
     chunk_tiles = np.array_split(gdf["Tilename"].unique(), args.total_chunks)[args.chunk_idx]
+    
     tmp_dir = Path(os.environ.get("SLURM_TMPDIR", "/tmp")) / f"batch_{args.chunk_idx}"
     tmp_dir.mkdir(parents=True, exist_ok=True)
-    
+
+    # 3978 Proj String (Mathematical Definition)
+    p_3978 = "+proj=lcc +lat_0=49 +lon_0=-95 +lat_1=49 +lat_2=77 +x_0=0 +y_0=0 +ellps=GRS80 +units=m +no_defs"
+
+    # EPSG -> UTM Zone Mapping
+    utm_map = {"3159":"15", "3160":"16", "2958":"17", "2959":"18"}
+
     stats = {"SUCCESS": 0, "EMPTY": 0, "DENSITY": 0}
 
     for i, tile_name in enumerate(chunk_tiles):
@@ -94,36 +87,29 @@ def main():
         url = tile_df["Download_H"].iloc[0]
         local_laz = tmp_dir / url.split('/')[-1]
 
-        log_message(f"\nTile {i}: {tile_name}", chunk_log)
+        log_message(f"Tile {i}: {tile_name}", chunk_log)
         subprocess.run(["wget", "-q", "-O", str(local_laz), url])
-        
         if not local_laz.exists(): continue
 
-        # GET TILE INFO
-        native_epsg, bounds = get_tile_info(local_laz)
-        if bounds:
-            log_message(f"  [BOUNDS] X: {bounds['minx']:.1f} to {bounds['maxx']:.1f}", chunk_log)
-            log_message(f"  [BOUNDS] Y: {bounds['miny']:.1f} to {bounds['maxy']:.1f}", chunk_log)
+        # Detect Zone and Setup Manual Transformer
+        epsg_code, bounds = get_tile_info(local_laz)
+        zone = utm_map.get(epsg_code, "17")
+        p_utm = f"+proj=utm +zone={zone} +ellps=GRS80 +units=m +no_defs"
         
-        # Transformer
-        # We use a robust definition in case cluster database is weird
-        transformer = Transformer.from_crs("EPSG:3978", native_epsg, always_xy=True)
+        log_message(f"  [INFO] Native EPSG: {epsg_code} (Zone {zone}N) | Bounds: X[{bounds['minx']:.0f}]", chunk_log)
+        transformer = Transformer.from_crs(p_3978, p_utm, always_xy=True)
 
         with ThreadPoolExecutor(max_workers=args.num_workers) as executor:
-            # We log coords for ONLY the first 3 plots of each tile to keep logs clean
-            futures = []
-            for j, (_, row) in enumerate(tile_df.iterrows()):
-                debug = chunk_log if j < 3 else None
-                futures.append(executor.submit(process_single_plot, local_laz, row, out_dir, transformer, 7168, debug))
-            
+            futures = [executor.submit(process_single_plot, local_laz, r, out_dir, transformer, 7168, (chunk_log if j==0 else None)) 
+                       for j, (_, r) in enumerate(tile_df.iterrows())]
             for f in futures:
                 res = f.result()
                 if res == "SUCCESS": stats["SUCCESS"] += 1
-                elif "SKIP_EMPTY" in res: stats["EMPTY"] += 1
-                elif "SKIP_DENSITY" in res: stats["DENSITY"] += 1
+                elif res == "EMPTY": stats["EMPTY"] += 1
+                elif res == "DENSITY": stats["DENSITY"] += 1
 
         local_laz.unlink()
-        log_message(f"  Current Totals: Saved={stats['SUCCESS']} | Empty={stats['EMPTY']}", chunk_log)
+        log_message(f"  Current Progress: Saved={stats['SUCCESS']} | Empty={stats['EMPTY']}", chunk_log)
 
 if __name__ == "__main__":
     main()
