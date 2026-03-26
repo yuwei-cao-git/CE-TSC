@@ -39,3 +39,9 @@ find $SCRATCH/ntems/ontario_pretrain_npy -name "*.npy" | wc -l
 
 # Check the tail of a log file to see the progress bars
 tail -f logs/ont_XXXX_XX.out
+
+# Merge all batch files into one master manifest
+awk 'FNR==1 && NR!=1{next;}{print}' meta_batch_*.csv > training_master_list.csv
+
+# Verify the count (should be ~126,581)
+wc -l training_master_list.csv
