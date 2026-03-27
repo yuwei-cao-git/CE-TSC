@@ -47,17 +47,13 @@ def get_tile_crs_and_bounds(laz_path):
         }
 
         wkt = reader["srs"]["compoundwkt"]
+
         crs = CRS.from_wkt(wkt)
 
-        epsg = crs.to_epsg()
-
-        if epsg is None:
-            raise ValueError("CRS has no EPSG code")
-
-        return crs, epsg, bounds
+        return crs, bounds   # 🚀 no EPSG needed
 
     except Exception as e:
-        raise RuntimeError(f"Failed reading CRS from {laz_path}: {e}")
+        raise RuntimeError(f"Failed reading CRS: {e}")
 
 
 # -------------------------
@@ -195,10 +191,10 @@ def main():
             continue
 
         try:
-            dst_crs, epsg, bounds = get_tile_crs_and_bounds(laz_path)
+            dst_crs, bounds = get_tile_crs_and_bounds(laz_path)
 
             log_message(
-                f"[CRS] EPSG:{epsg} | Bounds X[{bounds['minx']:.0f}]",
+                f"[CRS] Bounds X[{bounds['minx']:.0f}]",
                 log_file
             )
 
