@@ -156,7 +156,7 @@ def main():
     parser.add_argument("--num_workers", type=int, default=8)
     args = parser.parse_args()
 
-    log_file = f"log_chunk_{args.chunk_idx}.txt"
+    log_file = f"./logs/log_chunk_{args.chunk_idx}.txt"
     log_message(f"--- START CHUNK {args.chunk_idx} ---", log_file)
 
     gdf = gpd.read_file(args.input_gpkg, layer="sampling_plan_10k")
@@ -237,7 +237,7 @@ def main():
         laz_path.unlink(missing_ok=True)
 
         log_message(
-            f"[PROGRESS] OK={stats['SUCCESS']} EMPTY={stats['EMPTY']} BAD={stats['BAD']}",
+            f"[PROGRESS] SAVED={stats['SUCCESS']} EMPTY={stats['EMPTY']} LOW DENSITY={stats['BAD']}",
             log_file
         )
 

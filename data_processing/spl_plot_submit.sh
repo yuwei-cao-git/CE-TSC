@@ -4,8 +4,8 @@
 #SBATCH --error=logs/ont_%A_%a.err
 #SBATCH --array=0-99
 #SBATCH --cpus-per-task=16
-#SBATCH --mem=32
-#SBATCH --time=6:00:00
+#SBATCH --mem=32G
+#SBATCH --time=06:00:00
 
 set -euo pipefail
 
@@ -38,7 +38,7 @@ export PYTHONUNBUFFERED=1
 srun python batch_extract_pretrain.py \
     --input_gpkg "$SCRATCH/ntems/sampling_plan_10k.gpkg" \
     --output_folder "$OUTPUT_DIR" \
-    --total_chunks 100 \
+    --total_chunks 100\
     --chunk_idx "$SLURM_ARRAY_TASK_ID" \
     --num_workers 8
 
