@@ -2,10 +2,10 @@
 #SBATCH --job-name=ont_pretrain
 #SBATCH --output=logs/ont_%A_%a.out
 #SBATCH --error=logs/ont_%A_%a.err
-#SBATCH --array=0-1
+#SBATCH --array=0-99
 #SBATCH --cpus-per-task=16
-#SBATCH --mem=64G
-#SBATCH --time=24:00:00
+#SBATCH --mem=32
+#SBATCH --time=6:00:00
 
 set -euo pipefail
 
@@ -38,9 +38,15 @@ export PYTHONUNBUFFERED=1
 srun python batch_extract_pretrain.py \
     --input_gpkg "$SCRATCH/ntems/sampling_plan_10k.gpkg" \
     --output_folder "$OUTPUT_DIR" \
-    --total_chunks 2 \
+    --total_chunks 100 \
     --chunk_idx "$SLURM_ARRAY_TASK_ID" \
     --num_workers 8
+
+grep "PROGRESS" log_chunk_*.txt | awk -F'OK=' '{sum+=$2} END {print "Total Plots Saved: " sum}'
+
+echo "--- Skips Summary ---"
+grep "PROGRESS" log_chunk_*.txt | awk -F'EMPTY=' '{sum+=$2} END {print "Total Empty Skips: " int(sum)}'
+grep "PROGRESS" log_chunk_*.txt | awk -F'BAD=' '{sum+=$2} END {print "Total Bad Coords: " int(sum)}'
 
 # Merge all batch files into one master manifest
 awk 'FNR==1 && NR!=1{next;}{print}' meta_batch_*.csv > training_master_list.csv
