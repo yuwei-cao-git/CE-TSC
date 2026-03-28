@@ -30,12 +30,25 @@ def get_tile_crs_and_bounds(laz_path):
             {"type": "readers.las", "filename": str(laz_path), "count": 1}
         ]))
         pipe.execute()
-        meta = json.loads(pipe.metadata)
+
+        meta = pipe.metadata
+        if isinstance(meta, str):
+            meta = json.loads(meta)
+
         reader = meta["metadata"]["readers.las"]
-        bounds = {"minx": reader["minx"], "maxx": reader["maxx"], 
-                  "miny": reader["miny"], "maxy": reader["maxy"]}
+        bounds = {
+            "minx": reader["minx"],
+            "maxx": reader["maxx"],
+            "miny": reader["miny"],
+            "maxy": reader["maxy"],
+        }
+
         wkt = reader["srs"]["compoundwkt"]
-        return CRS.from_wkt(wkt), bounds
+
+        crs = CRS.from_wkt(wkt)
+
+        return crs, bounds
+
     except Exception as e:
         raise RuntimeError(f"Failed reading CRS: {e}")
 
