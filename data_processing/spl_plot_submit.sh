@@ -40,16 +40,10 @@ srun python batch_extract_pretrain.py \
     --output_folder "$OUTPUT_DIR" \
     --total_chunks 200\
     --chunk_idx "$SLURM_ARRAY_TASK_ID" \
-    --num_workers 8
-
-grep "PROGRESS" log_chunk_*.txt | awk -F'OK=' '{sum+=$2} END {print "Total Plots Saved: " sum}'
-
-echo "--- Skips Summary ---"
-grep "PROGRESS" log_chunk_*.txt | awk -F'EMPTY=' '{sum+=$2} END {print "Total Empty Skips: " int(sum)}'
-grep "PROGRESS" log_chunk_*.txt | awk -F'BAD=' '{sum+=$2} END {print "Total Bad Coords: " int(sum)}'
+    --num_workers 12
 
 # Merge all batch files into one master manifest
-awk 'FNR==1 && NR!=1{next;}{print}' meta_batch_*.csv > training_master_list.csv
+awk 'FNR==1 && NR!=1{next;}{print}' ./logs/meta_batch_*.csv > training_master_list.csv
 
 # Verify the count (should be ~126,581)
 wc -l training_master_list.csv
