@@ -117,7 +117,7 @@ def main():
             print("No CSV files found to merge.")
             return
         combined_df = pd.concat([pd.read_csv(f) for f in all_csvs])
-        combined_df.to_csv("./dataset/training_master_list.csv", index=False)
+        combined_df.to_csv("../dataset/training_master_list.csv", index=False)
         print(f"Success! Final manifest saved with {len(combined_df)} records.")
         return
 
@@ -214,3 +214,12 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+# python batch_extract_pretrain.py --merge_only --input_gpkg x --output_folder x --chunk_idx 0 --total_chunks 0
+
+# python batch_extract_pretrain.py \
+#     --input_gpkg "$SCRATCH/ntems/sampling_plan_10k.gpkg" \
+#     --output_folder "$SCRATCH/ntems/ontario_pretrain_npy" \
+#     --total_chunks 200 \
+#     --chunk_idx "$SLURM_ARRAY_TASK_ID" \
+#     --num_workers 12
