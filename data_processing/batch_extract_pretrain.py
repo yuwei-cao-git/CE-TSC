@@ -12,7 +12,7 @@ import glob
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from pyproj import Transformer, CRS
-
+import re
 
 # -------------------------
 # Utilities
@@ -24,6 +24,32 @@ def log_message(message, log_file=None):
         with open(log_file, "a") as f:
             f.write(message + "\n")
 
+ZONE_TO_EPSG = {
+    15: 3159,
+    16: 3160,
+    17: 2958,
+    18: 2959,
+}
+
+
+def infer_crs_from_tile_name(tile_name: str):
+    """
+    Extract UTM zone from tile name like:
+    1kmZ153430547302022L
+    1kmZ183260504102022L
+    """
+    m = re.search(r"Z(\d{2})", tile_name)
+    if not m:
+        raise ValueError(f"Cannot infer zone from tile name: {tile_name}")
+
+    zone = int(m.group(1))
+
+    if zone not in ZONE_TO_EPSG:
+        raise ValueError(f"Unsupported UTM zone {zone} in {tile_name}")
+
+    epsg = ZONE_TO_EPSG[zone]
+    return CRS.from_epsg(epsg), epsg
+
 
 def get_tile_crs(laz_path):
     try:
@@ -34,8 +60,40 @@ def get_tile_crs(laz_path):
         meta = pipe.metadata
         if isinstance(meta, str):
             meta = json.loads(meta)
-        wkt = meta["metadata"]["readers.las"]["srs"]["compoundwkt"]
-        return CRS.from_wkt(wkt)
+        reader = meta["metadata"]["readers.las"]
+        srs_info = reader.get("srs", {})
+
+        # ---- Try WKT first ----
+        wkt = srs_info.get("compoundwkt", "") or srs_info.get("wkt", "")
+
+        if isinstance(wkt, str) and wkt.strip():
+            try:
+                crs = CRS.from_wkt(wkt)
+
+                if crs.is_compound:
+                    crs = crs.sub_crs_list[0]
+
+                return crs
+
+            except Exception:
+                print(f"[WARN] Invalid WKT in {laz_path.name}, trying fallback...")
+
+        # ---- Try authority code ----
+        epsg = srs_info.get("horizontal", {}).get("epsg", None)
+
+        if epsg:
+            try:
+                return CRS.from_epsg(int(epsg))
+            except Exception:
+                pass
+
+        # ---- Final fallback ----
+        else:
+            print(f"[WARN] Using fallback CRS for {laz_path.name}")
+            return infer_crs_from_tile_name(laz_path.name)
+
+        raise RuntimeError("No valid CRS metadata found")
+
     except Exception as e:
         raise RuntimeError(f"Failed reading CRS: {e}")
 
@@ -176,7 +234,6 @@ def main():
             f"[TILE {i}/{len(tiles)}] {tile} -> Downloading {len(needed_rows)} plots...",
             log_file,
         )
-
         subprocess.run(["wget", "-q", "-O", str(laz_path), url])
 
         if laz_path.exists():
