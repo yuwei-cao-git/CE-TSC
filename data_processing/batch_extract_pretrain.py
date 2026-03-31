@@ -51,48 +51,76 @@ def infer_crs_from_tile_name(tile_name: str):
     return CRS.from_epsg(epsg), epsg
 
 
+import json
+import pdal
+from pyproj import CRS
+
+
 def get_tile_crs(laz_path):
     try:
         pipe = pdal.Pipeline(
             json.dumps([{"type": "readers.las", "filename": str(laz_path), "count": 1}])
         )
         pipe.execute()
+
         meta = pipe.metadata
         if isinstance(meta, str):
             meta = json.loads(meta)
+
         reader = meta["metadata"]["readers.las"]
-        srs_info = reader.get("srs", {})
+        srs_info = reader.get("srs", None)
 
-        # ---- Try WKT first ----
-        wkt = srs_info.get("compoundwkt", "") or srs_info.get("wkt", "")
+        # -------------------------
+        # Case 1: srs is dict
+        # -------------------------
+        if isinstance(srs_info, dict):
 
-        if isinstance(wkt, str) and wkt.strip():
-            try:
-                crs = CRS.from_wkt(wkt)
+            # Try WKT first
+            wkt = srs_info.get("compoundwkt", "") or srs_info.get("wkt", "")
 
-                if crs.is_compound:
-                    crs = crs.sub_crs_list[0]
+            if isinstance(wkt, str) and wkt.strip():
+                try:
+                    crs = CRS.from_wkt(wkt)
 
-                return crs
+                    if crs.is_compound:
+                        crs = crs.sub_crs_list[0]
 
-            except Exception:
-                print(f"[WARN] Invalid WKT in {laz_path.name}, trying fallback...")
+                    return crs
 
-        # ---- Try authority code ----
-        epsg = srs_info.get("horizontal", {}).get("epsg", None)
+                except Exception:
+                    print(f"[WARN] Invalid WKT in {laz_path.name}")
 
-        if epsg:
-            try:
-                return CRS.from_epsg(int(epsg))
-            except Exception:
-                pass
+            # Try EPSG code
+            epsg = srs_info.get("horizontal", {}).get("epsg", None)
 
-        # ---- Final fallback ----
-        else:
-            print(f"[WARN] Using fallback CRS for {laz_path.name}")
-            return infer_crs_from_tile_name(laz_path.name)
+            if epsg:
+                try:
+                    return CRS.from_epsg(int(epsg))
+                except Exception:
+                    pass
 
-        raise RuntimeError("No valid CRS metadata found")
+        # -------------------------
+        # Case 2: srs is string
+        # -------------------------
+        elif isinstance(srs_info, str):
+
+            if srs_info.strip():
+                try:
+                    crs = CRS.from_wkt(srs_info)
+
+                    if crs.is_compound:
+                        crs = crs.sub_crs_list[0]
+
+                    return crs
+
+                except Exception:
+                    print(f"[WARN] String WKT invalid in {laz_path.name}")
+
+        # -------------------------
+        # Final fallback
+        # -------------------------
+        print(f"[WARN] Using tile-name fallback for {laz_path.name}")
+        return infer_crs_from_tile_name(laz_path.name)
 
     except Exception as e:
         raise RuntimeError(f"Failed reading CRS: {e}")
