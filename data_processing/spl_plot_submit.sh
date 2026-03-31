@@ -2,9 +2,9 @@
 #SBATCH --job-name=ont_pretrain
 #SBATCH --output=logs/ont_%A_%a.out
 #SBATCH --error=logs/ont_%A_%a.err
-#SBATCH --array=0-199
+#SBATCH --array=0-100
 #SBATCH --cpus-per-task=16
-#SBATCH --mem=64G
+#SBATCH --mem=32G
 #SBATCH --time=6:00:00
 
 set -euo pipefail
