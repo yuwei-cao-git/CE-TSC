@@ -50,6 +50,7 @@ def infer_crs_from_tile_name(tile_name: str):
     epsg = ZONE_TO_EPSG[zone]
     return CRS.from_epsg(epsg), epsg
 
+
 def get_tile_crs(laz_path):
     try:
         pipe = pdal.Pipeline(
@@ -62,17 +63,33 @@ def get_tile_crs(laz_path):
             meta = json.loads(meta)
 
         reader = meta["metadata"]["readers.las"]
-        srs_info = reader.get("srs", None)
 
         # -------------------------
-        # Case 1: srs is dict
+        # Priority 1: src.compoundwkt
         # -------------------------
-        if isinstance(srs_info, dict):
-
-            # Try WKT first
-            wkt = srs_info.get("compoundwkt", "") or srs_info.get("wkt", "")
+        try:
+            wkt = reader["src"]["compoundwkt"]
 
             if isinstance(wkt, str) and wkt.strip():
+                crs = CRS.from_wkt(wkt)
+
+                if crs.is_compound:
+                    crs = crs.sub_crs_list[0]
+
+                return crs
+
+        except Exception:
+            pass
+
+        # -------------------------
+        # Priority 2: srs
+        # -------------------------
+        srs_info = reader.get("srs", None)
+
+        if isinstance(srs_info, dict):
+            wkt = srs_info.get("compoundwkt", "") or srs_info.get("wkt", "")
+
+            if wkt:
                 try:
                     crs = CRS.from_wkt(wkt)
 
@@ -80,24 +97,10 @@ def get_tile_crs(laz_path):
                         crs = crs.sub_crs_list[0]
 
                     return crs
-
-                except Exception:
-                    print(f"[WARN] Invalid WKT in {laz_path.name}")
-
-            # Try EPSG code
-            epsg = srs_info.get("horizontal", {}).get("epsg", None)
-
-            if epsg:
-                try:
-                    return CRS.from_epsg(int(epsg))
                 except Exception:
                     pass
 
-        # -------------------------
-        # Case 2: srs is string
-        # -------------------------
         elif isinstance(srs_info, str):
-
             if srs_info.strip():
                 try:
                     crs = CRS.from_wkt(srs_info)
@@ -106,12 +109,11 @@ def get_tile_crs(laz_path):
                         crs = crs.sub_crs_list[0]
 
                     return crs
-
                 except Exception:
-                    print(f"[WARN] String WKT invalid in {laz_path.name}")
+                    pass
 
         # -------------------------
-        # Final fallback
+        # Final fallback: tile name
         # -------------------------
         print(f"[WARN] Using tile-name fallback for {laz_path.name}")
         return infer_crs_from_tile_name(laz_path.name)
