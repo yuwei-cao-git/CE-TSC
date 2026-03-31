@@ -127,7 +127,7 @@ def process_single_plot(laz_path, row, output_folder, transformer, target_n=8192
     """Processes a single plot: Crop -> Filter -> H95 -> Save."""
     try:
         species_id = int(row["label"])
-        eco_id = int(row.get("SITE_REG_O", 0))
+        eco_id = str(row.get("SITE_REG_O", 0))
         rel_dir = str(species_id)
         file_name = f"{species_id}_{int(row['x'])}_{int(row['y'])}.npy"
         out_path = Path(output_folder) / rel_dir / file_name
@@ -236,7 +236,7 @@ def main():
                             "relative_path": f"{int(r['label'])}/{p.name}",
                             "label": int(r["label"]),
                             "h95": float(np.percentile(data_existing[:, 2], 95)),
-                            "ecoregion": int(r.get("SITE_REG_O", 0)),
+                            "ecoregion": str(r.get("SITE_REG_O", 0)),
                             "tilename": tile,
                         }
                     )
