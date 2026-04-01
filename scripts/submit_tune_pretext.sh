@@ -12,9 +12,7 @@ trap 'job_failed=$?' EXIT
 cd $SLURM_TMPDIR
 mkdir -p work/CE-TSC
 cd work/CE-TSC
-cp -r $project/CE-TSC/dataset .
-cp -r $project/CE-TSC/model .
-cp $project/CE-TSC/train_pretext.py .
+git clone https://github.com/yuwei-cao-git/CE-TSC.git
 echo "Source code cloned!"
 
 # data transfer
