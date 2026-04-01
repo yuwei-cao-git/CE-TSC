@@ -2,7 +2,7 @@
 #SBATCH --nodes=1               # number of nodes
 #SBATCH --job-name=ont_tune
 #SBATCH --array=0-3            # Launch 4 experiments
-#SBATCH --gres=nvidia_h100_80gb_hbm3_3g.40gb:1
+#SBATCH --gpus=nvidia_h100_80gb_hbm3_3g.40gb:1
 #SBATCH --cpus-per-task=16
 #SBATCH --time=24:00:00
 

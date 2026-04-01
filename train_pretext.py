@@ -12,7 +12,7 @@ def main():
     parser = argparse.ArgumentParser(description="Ontario Forest Pre-training")
 
     # Path Arguments
-    parser.add_argument("--data_root", type=str, required=True)
+    parser.add_argument("--data_root", type=str, default="./data/ontario_pretrain_npy")
     parser.add_argument("--train_csv", type=str, default="train_split.csv")
     parser.add_argument("--val_csv", type=str, default="val_split.csv")
     parser.add_argument("--test_csv", type=str, default="test_split.csv")
