@@ -14,6 +14,7 @@ logs/
 
 # Data
 *.npy
+data/
 
 #
 # Distribution / packaging
