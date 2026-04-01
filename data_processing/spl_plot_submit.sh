@@ -2,9 +2,9 @@
 #SBATCH --job-name=ont_pretrain
 #SBATCH --output=logs/ont_%A_%a.out
 #SBATCH --error=logs/ont_%A_%a.err
-#SBATCH --array=0-100
+#SBATCH --array=0-200
 #SBATCH --cpus-per-task=16
-#SBATCH --mem=32G
+#SBATCH --mem=64G
 #SBATCH --time=6:00:00
 
 set -euo pipefail
@@ -40,7 +40,7 @@ srun python batch_extract_pretrain.py \
     --output_folder "$OUTPUT_DIR" \
     --total_chunks 200\
     --chunk_idx "$SLURM_ARRAY_TASK_ID" \
-    --num_workers 8 
+    --num_workers 12 
 
 # Merge all batch files into one master manifest
 awk 'FNR==1 && NR!=1{next;}{print}' ./logs/meta_batch_*.csv > training_master_list.csv
