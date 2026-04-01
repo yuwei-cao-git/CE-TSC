@@ -1,98 +1,90 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from openpoints.models import build_model_from_cfg
-from openpoints.utils import EasyConfig
+from pointnext import pointnext_s, PointNext, pointnext_b, pointnext_l, pointnext_xl
 
-class PointNeXtOntario(nn.Module):
-    def __init__(self, num_species, num_ecoregions, emb_dim=16):
-        super().__init__()
-        
-        # 1. PointNeXt Backbone (Encoder)
-        # We use the standard PointNeXt-S or M configuration
-        cfg = EasyConfig()
-        cfg.model = {
-            'NAME': 'BaseModel',
-            'encoder_args': {
-                'NAME': 'PointNextEncoder',
-                'blocks': [1, 1, 1, 1, 1], # S-version, can be [1, 1, 1, 1, 1] for M
-                'strides': [1, 2, 2, 2, 2],
-                'width': 32,
-                'in_channels': 3,
-                'radius': 2.5, # Radius in meters
-                'radius_scaling': 2.5,
-                'sa_layers': 2,
-                'sa_use_res': True,
-            },
-            'cls_args': {
-                'NAME': 'ClsHead',
-                'num_classes': 512, # Global latent feature size
-                'mlps': [512, 256],
-            }
-        }
-        self.backbone = build_model_from_cfg(cfg.model)
-        
-        # 2. Ecoregion Embedding
-        # This allows the model to shift its interpretation based on geography
-        self.eco_embedding = nn.Embedding(num_ecoregions, emb_dim)
-        
-        # 3. Global Feature Dimension (Backbone Latent + Embedding)
-        latent_dim = 256 + emb_dim
-        
+
+class PointNextOntario(nn.Module):
+    def __init__(self, config, in_dim, num_species, num_ecoregions):
+        super(PointNextOntario, self).__init__()
+        self.config = config
+
+        # 1. Select Encoder from PyPI package
+        if config.get("encoder", "s") == "s":
+            encoder_backbone = pointnext_s(in_dim=in_dim)
+        elif config["encoder"] == "b":
+            encoder_backbone = pointnext_b(in_dim=in_dim)
+        elif config["encoder"] == "l":
+            encoder_backbone = pointnext_l(in_dim=in_dim)
+        else:
+            encoder_backbone = pointnext_xl(in_dim=in_dim)
+
+        # 2. Backbone Wrapper
+        # emb_dims is the bottleneck dimension (usually 512 for S, 1024 for L)
+        self.backbone = PointNext(config["emb_dims"], encoder=encoder_backbone)
+        self.bn_out = nn.BatchNorm1d(config["emb_dims"])
+        self.act = nn.ReLU()
+
+        # 3. Context: Ecoregion Embedding
+        # Allows model to interpret structure differently based on geography
+        self.eco_emb_dim = config.get("eco_emb_dim", 16)
+        self.eco_embedding = nn.Embedding(num_ecoregions, self.eco_emb_dim)
+
+        # 4. Total latent dimension after concatenation
+        latent_dim = config["emb_dims"] + self.eco_emb_dim
+
         # --- PRETEXT HEADS ---
-        # Task 1: Dominant Species (Weakly Supervised)
-        self.pretext_species_head = nn.Sequential(
-            nn.Linear(latent_dim, 128),
+        # Task A: Species Classification (Weak Supervision)
+        self.species_head = nn.Sequential(
+            nn.Linear(latent_dim, 256),
+            nn.BatchNorm1d(256),
             nn.ReLU(),
-            nn.Dropout(0.3),
-            nn.Linear(128, num_species)
-        )
-        
-        # Task 2: Structural Proxy (H95 Regression)
-        self.pretext_structure_head = nn.Sequential(
-            nn.Linear(latent_dim, 64),
-            nn.ReLU(),
-            nn.Linear(64, 1) # Outputs H95 in meters
-        )
-        
-        # --- DOWNSTREAM HEAD ---
-        # Task 3: Species Composition (FRI Expertise)
-        self.downstream_comp_head = nn.Sequential(
-            nn.Linear(latent_dim, 128),
-            nn.ReLU(),
-            nn.Linear(128, num_species),
-            nn.Softmax(dim=-1) # Ensures sum-to-one for composition %
+            nn.Dropout(config.get("dp_pc", 0.5)),
+            nn.Linear(256, num_species),
         )
 
-    def forward(self, data, mode='pretext'):
+        # Task B: Structural Regression (H95 Prediction)
+        self.structure_head = nn.Sequential(
+            nn.Linear(latent_dim, 128),
+            nn.ReLU(),
+            nn.Linear(128, 1),  # Raw meters (float)
+        )
+
+        # --- DOWNSTREAM HEAD ---
+        # Task C: Tree Species Composition (FRI Logic)
+        self.composition_head = nn.Sequential(
+            nn.Linear(latent_dim, 256),
+            nn.ReLU(),
+            nn.Linear(256, num_species),
+            nn.Softmax(dim=-1),  # Vectors must sum to 1.0 (100%)
+        )
+
+    def forward(self, pc_feat, xyz, eco_idx, mode="pretext"):
         """
-        data: dictionary from Dataset __getitem__
-        mode: 'pretext' or 'downstream'
+        pc_feat: (B, 3, N) Standardized coordinates as features
+        xyz:     (B, 3, N) Centered coordinates for grouping
+        eco_idx: (B,) Integer IDs for ecoregions
+        mode:    'pretext' or 'downstream'
         """
-        # data['pos']: (B, N, 3) - meters for grouping
-        # data['x']:   (B, 3, N) - standardized for features (PointNeXt expects 3, N)
-        # data['ecoregion']: (B,)
-        
-        # 1. Get Backbone Latent Features
-        # PointNeXt expects features in (B, C, N) format
-        x = data['x'].transpose(1, 2) if data['x'].shape[1] != 3 else data['x']
-        global_feat = self.backbone.encoder(data['pos'], x)
-        global_feat = self.backbone.prediction(global_feat) # (B, 256)
-        
-        # 2. Add Context (Ecoregion Embedding)
-        eco_emb = self.eco_embedding(data['ecoregion']) # (B, emb_dim)
-        combined_feat = torch.cat([global_feat, eco_emb], dim=-1) # (B, 256 + emb_dim)
-        
-        if mode == 'pretext':
-            species_logits = self.pretext_species_head(combined_feat)
-            h95_pred = self.pretext_structure_head(combined_feat)
-            return {
-                "species_logits": species_logits,
-                "h95_pred": h95_pred.squeeze(-1)
-            }
-        
-        elif mode == 'downstream':
-            comp_pred = self.downstream_comp_head(combined_feat)
-            return {
-                "composition_pred": comp_pred
-            }
+        # 1. Feature Extraction
+        # Note: PyPI PointNext expects (B, C, N)
+        global_features = self.backbone(pc_feat, xyz)  # Output: (B, emb_dims, N)
+
+        # Global Average Pooling to get a single vector per plot
+        global_features = self.bn_out(global_features)
+        global_features = global_features.mean(dim=-1)  # (B, emb_dims)
+        global_features = self.act(global_features)
+
+        # 2. Inject Ecoregion Context
+        eco_feat = self.eco_embedding(eco_idx)  # (B, eco_emb_dim)
+        combined = torch.cat([global_features, eco_feat], dim=-1)  # (B, latent_dim)
+
+        # 3. Branching Logic
+        if mode == "pretext":
+            species_logits = self.species_head(combined)
+            h95_pred = self.structure_head(combined).squeeze(-1)
+            return species_logits, h95_pred
+
+        elif mode == "downstream":
+            comp_pred = self.composition_head(combined)
+            return comp_pred

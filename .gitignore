@@ -8,6 +8,8 @@ __pycache__/
 
 # Logs
 logs/
+checkpoints/
+wandb/
 *.err
 *.txt
 *.out
