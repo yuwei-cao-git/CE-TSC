@@ -100,7 +100,7 @@ class PretextDataModule(LightningDataModule):
         super().__init__()
         self.config = config
         self.batch_size = config.get("batch_size", 32)
-        self.num_workers = config.get("num_workers", 8)
+        self.num_workers = config.get("num_workers", 6)
         self.data_root = config["data_root"]
 
         # Paths to your static split files

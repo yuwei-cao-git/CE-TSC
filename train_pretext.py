@@ -19,16 +19,9 @@ def main():
     parser.add_argument("--experiment_name", type=str)
 
     # Model Architecture (Critical for the PyPI PointNext)
-    parser.add_argument(
-        "--encoder", type=str, default="s", choices=["s", "b", "l", "xl"]
-    )
-    parser.add_argument(
-        "--emb_dims", type=int, default=512, help="Latent dimension of backbone"
-    )
-    parser.add_argument(
-        "--eco_emb_dim", type=int, default=16, help="Ecoregion embedding size"
-    )
-    parser.add_argument("--rot", type=bool, default=False)
+    parser.add_argument("--encoder", type=str, default="s", choices=["s", "b", "l", "xl"])
+    parser.add_argument("--emb_dims", type=int, default=512, help="Latent dimension of backbone")
+    parser.add_argument("--eco_emb_dim", type=int, default=16, help="Ecoregion embedding size")
 
     # Hyperparameters
     parser.add_argument("--lr", type=float, default=1e-3)
@@ -37,6 +30,9 @@ def main():
     parser.add_argument("--max_epochs", type=int, default=100)
     parser.add_argument("--lambda_struct", type=float, default=0.5)
     parser.add_argument("--dp_pc", type=float, default=0.5, help="Dropout rate")
+
+    parser.add_argument("--rot", type=bool, default=False)
+    parser.add_argument("--num_workers", type=int, default=6)
 
     args = parser.parse_args()
 
