@@ -1,6 +1,13 @@
 import numpy as np
 import torch
 
+
+def center_xy_only(coords):
+    """Centers X and Y but preserves Z (Height Above Ground)."""
+    mean_xy = np.mean(coords[:, :2], axis=0)
+    coords[:, :2] -= mean_xy
+    return coords
+
 def rotate_z_only(coords, feats=None):
     """
     Standard Forest LiDAR Augmentation: 

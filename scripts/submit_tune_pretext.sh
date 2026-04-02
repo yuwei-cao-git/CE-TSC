@@ -3,7 +3,8 @@
 #SBATCH --job-name=ont_tune
 #SBATCH --array=0-3            # Launch 4 experiments
 #SBATCH --gpus=nvidia_h100_80gb_hbm3_3g.40gb:1
-#SBATCH --cpus-per-task=16
+#SBATCH --cpus-per-task=6
+#SBATCH --mem=64G
 #SBATCH --time=24:00:00
 
 # Trap the exit status of the job

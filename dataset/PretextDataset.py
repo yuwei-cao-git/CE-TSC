@@ -43,7 +43,6 @@ class OntarioPretextDataset(Dataset):
         self.df = manifest_df
         self.data_root = data_root
         self.transform = transform
-        self.eco_column = eco_column
         self.rot = rotate
         self.num_points = 7168
 
@@ -71,15 +70,9 @@ class OntarioPretextDataset(Dataset):
                 pc_raw, pc_feat=None, target=None, rot=self.rot
             )
 
-        # 3. Create the two views for PointNeXt
-        # VIEW A: The "Spatial Position" (Input XYZ)
-        # We keep this as the centered coordinates for local grouping logic
-        pos = pc_raw.copy() 
-
-        # VIEW B: The "Input Features" (Standardized)
-        # We scale by the constant 11.28 to provide a normalized feature vector
-        # that preserves tree height proportions.
-        x = pc_raw / 11.28 
+        pos = pc_raw.copy()
+        # 3. Features: Normalized coordinates (consistent with Pre-training)
+        x = pc_raw / 11.28
 
         # 4. Return as Tensors
         return {
@@ -155,7 +148,7 @@ class PretextDataModule(LightningDataModule):
             self.data_root,
             eco_column="ecoregion_idx",
             transform=self.config.get("point_cloud_transform"),
-            rotate=self.config.get("rotate", True),
+            rotate=self.config.get("rotate", False),
         )
         return DataLoader(
             ds, batch_size=self.batch_size, shuffle=True, 

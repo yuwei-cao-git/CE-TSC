@@ -66,7 +66,6 @@ def main():
     # 7. Trainer
     trainer = pl.Trainer(
         max_epochs=args.max_epochs,
-        accelerator="gpu",
         logger=wandb_logger,
         callbacks=[checkpoint_callback, LearningRateMonitor(logging_interval='step')],
         strategy="auto"
