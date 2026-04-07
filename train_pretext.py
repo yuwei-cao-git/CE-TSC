@@ -19,6 +19,7 @@ def main():
     parser.add_argument("--experiment_name", type=str)
 
     # Model Architecture (Critical for the PyPI PointNext)
+    parser.add_argument("--mode", type=str, default="pretext_both", choices=["pretext_both", "pretext_lsc"],)
     parser.add_argument("--encoder", type=str, default="s", choices=["s", "b", "l", "xl"])
     parser.add_argument("--emb_dims", type=int, default=512, help="Latent dimension of backbone")
     parser.add_argument("--eco_emb_dim", type=int, default=16, help="Ecoregion embedding size")

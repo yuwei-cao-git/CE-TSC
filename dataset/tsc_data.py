@@ -5,7 +5,7 @@ from torch.utils.data import Dataset, DataLoader, ConcatDataset
 from pytorch_lightning import LightningDataModule
 from os.path import join
 
-from .data_utils import forest_pretext_transform, center_xy_only
+from .data_utils import forest_pretext_transform, center_xy_only, normalize_point_cloud
 
 # Hardcoded mapping for site-specific ecoregions
 # WRF, RMF -> 3E | NIF, OVF -> 5E
@@ -44,9 +44,8 @@ class TSCDataset(Dataset):
                 pc, pc_feat=None, target=None, rot=self.rotate
             )
         pos = pc.copy()
-        # 3. Features: Normalized coordinates (consistent with Pre-training)
-        # We use 11.28 as the scaling constant (plot radius)
-        x = pc / 11.28
+        # 3. Features: Normalized coordinates
+        x = normalize_point_cloud(pc)
 
         return {
             "point_cloud": torch.from_numpy(pos).float(),  # 'pos' for grouping

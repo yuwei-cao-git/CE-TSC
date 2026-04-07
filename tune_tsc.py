@@ -29,8 +29,8 @@ def main():
     parser.add_argument(
         "--pretrained_ckpt",
         type=str,
-        required=True,
-        help="Path to best pretext .ckpt file",
+        default=None,
+        help="Path to .ckpt or leave empty for scratch",
     )
 
     # Model Params (Must match Stage A)

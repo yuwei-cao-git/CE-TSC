@@ -8,6 +8,17 @@ def center_xy_only(coords):
     coords[:, :2] -= mean_xy
     return coords
 
+
+def normalize_point_cloud(xyz):
+    # Center and scale spatial coordinates
+    centroid = np.mean(xyz, axis=0)
+    xyz_centered = xyz - centroid
+    max_distance = np.max(np.linalg.norm(xyz_centered, axis=1))
+    xyz_normalized = xyz_centered / (max_distance + 1e-8)
+
+    return xyz_normalized
+
+
 def rotate_z_only(coords, feats=None):
     """
     Standard Forest LiDAR Augmentation: 

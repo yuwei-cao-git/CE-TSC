@@ -36,9 +36,13 @@ class PointNextOntario(nn.Module):
         # --- PRETEXT HEADS ---
         # Task A: Species Classification (Weak Supervision)
         self.species_head = nn.Sequential(
-            nn.Linear(latent_dim, 256),
+            nn.Linear(latent_dim, 512),
+            nn.BatchNorm1d(512),
+            nn.LeakyReLU(),
+            nn.Dropout(config.get("dp_pc", 0.5)),
+            nn.Linear(512, 256),
             nn.BatchNorm1d(256),
-            nn.ReLU(),
+            nn.LeakyReLU(),
             nn.Dropout(config.get("dp_pc", 0.5)),
             nn.Linear(256, num_species),
         )
@@ -53,10 +57,15 @@ class PointNextOntario(nn.Module):
         # --- DOWNSTREAM HEAD ---
         # Task C: Tree Species Composition (FRI Logic)
         self.composition_head = nn.Sequential(
-            nn.Linear(latent_dim, 256),
-            nn.ReLU(),
+            nn.Linear(latent_dim, 512),
+            nn.BatchNorm1d(512),
+            nn.LeakyReLU(),
+            nn.Dropout(config.get("dp_pc", 0.5)),
+            nn.Linear(512, 256),
+            nn.BatchNorm1d(256),
+            nn.LeakyReLU(),
+            nn.Dropout(config.get("dp_pc", 0.5)),
             nn.Linear(256, num_species),
-            nn.Softmax(dim=-1),  # Vectors must sum to 1.0 (100%)
         )
 
     def forward(self, pc_feat, xyz, eco_idx, mode="pretext"):
@@ -80,11 +89,14 @@ class PointNextOntario(nn.Module):
         combined = torch.cat([global_features, eco_feat], dim=-1)  # (B, latent_dim)
 
         # 3. Branching Logic
-        if mode == "pretext":
+        if mode == "pretext_lsc":
+            species_logits = self.species_head(combined)
+            return species_logits
+        elif mode == "pretext_both":
             species_logits = self.species_head(combined)
             h95_pred = self.structure_head(combined).squeeze(-1)
             return species_logits, h95_pred
 
         elif mode == "downstream":
             comp_pred = self.composition_head(combined)
-            return comp_pred
+            return F.softmax(comp_pred, dim=1)

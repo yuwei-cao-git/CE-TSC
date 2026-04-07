@@ -22,6 +22,9 @@ class TSCTuningTask(pl.LightningModule):
         if pretrained_path:
             ckpt = torch.load(pretrained_path, map_location="cpu")
             self.model.load_state_dict(ckpt["state_dict"], strict=False)
+            print(f"--- SUCCESS: Initialized from {pretrained_path} ---")
+        else:
+            print("--- NOTICE: No valid pre-trained path. Training FROM SCRATCH. ---")
 
         # Metrics: Use 'global' to avoid batch-size artifacts
         num_site_labels = mapping_matrix.shape[1]
@@ -31,7 +34,8 @@ class TSCTuningTask(pl.LightningModule):
         self.val_rmse = MeanSquaredError(squared=False)
 
         # Loss: KL Divergence is best for proportions (0.0 to 1.0)
-        self.criterion = nn.KLDivLoss(reduction="batchmean")
+        # self.criterion = nn.KLDivLoss(reduction="batchmean")
+        self.criterion = nn.MSELoss()
 
     def forward(self, batch):
         pred_16 = self.model(
@@ -80,7 +84,7 @@ class TSCTuningTask(pl.LightningModule):
             self.parameters(), lr=self.config.get("lr", 1e-4), weight_decay=0.05
         )
         # Cosine Annealing helps the R2 flip from negative to positive smoothly
-        scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
-            optimizer, T_max=self.config.get("max_epochs", 150)
+        scheduler = torch.optim.lr_scheduler.StepLR(
+            optimizer, step_size=10, gamma=0.1
         )
         return [optimizer], [scheduler]

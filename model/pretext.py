@@ -22,10 +22,11 @@ class OntarioPretrainTask(pl.LightningModule):
 
         # Loss Functions
         self.ce_loss = nn.CrossEntropyLoss()
-        self.mse_loss = nn.MSELoss()
 
-        # Weight for the structural regression task
-        self.lambda_struct = config.get("lambda_struct", 0.5)
+        if config["mode"] == "pretext_both":
+            self.mse_loss = nn.MSELoss()
+            # Weight for the structural regression task
+            self.lambda_struct = config.get("lambda_struct", 0.5)
 
     def forward(self, batch):
         # PointNext package expects (B, C, N)
@@ -34,19 +35,22 @@ class OntarioPretrainTask(pl.LightningModule):
         pos = batch["pos"].transpose(1, 2)  # Raw/Centered coords for grouping
         eco_idx = batch["ecoregion"]
 
-        return self.model(x, pos, eco_idx, mode="pretext")
+        return self.model(x, pos, eco_idx, mode=self.config["mode"])
 
     def training_step(self, batch, batch_idx):
-        species_logits, h95_pred = self.forward(batch)
+        total_loss = 0.0
+        if self.config["mode"] == "pretext_both":
+            species_logits, h95_pred = self.forward(batch)
+            # 2. Structural Regression Loss
+            loss_struct = self.mse_loss(h95_pred, batch["structure_label"])
+            # Total Weighted Loss
+            total_loss = self.lambda_struct * loss_struct
+        else:
+            species_logits = self.forward(batch)
 
         # 1. Species Classification Loss
         loss_species = self.ce_loss(species_logits, batch["species_label"])
-
-        # 2. Structural Regression Loss
-        loss_struct = self.mse_loss(h95_pred, batch["structure_label"])
-
-        # Total Weighted Loss
-        total_loss = loss_species + (self.lambda_struct * loss_struct)
+        total_loss += loss_species
 
         # Logging
         self.log(
@@ -58,19 +62,22 @@ class OntarioPretrainTask(pl.LightningModule):
             sync_dist=True,
         )
         self.log("train_species_loss", loss_species, on_epoch=True, sync_dist=True)
-        self.log(
-            "train_h95_rmse", torch.sqrt(loss_struct), on_epoch=True, sync_dist=True
-        )
+        if self.config["mode"] == "pretext_both":
+            self.log("train_h95_rmse", torch.sqrt(loss_struct), on_epoch=True, sync_dist=True)
 
         return total_loss
 
     def validation_step(self, batch, batch_idx):
-        species_logits, h95_pred = self.forward(batch)
+        val_loss = 0.0
+        if self.config["mode"] == "pretext_both":
+            species_logits, h95_pred = self.forward(batch)
+            loss_struct = self.mse_loss(h95_pred, batch["structure_label"])
+            val_loss = self.lambda_struct * loss_struct
+        else: 
+            species_logits = self.forward(batch)
 
         loss_species = self.ce_loss(species_logits, batch["species_label"])
-        loss_struct = self.mse_loss(h95_pred, batch["structure_label"])
-
-        val_loss = loss_species + (self.lambda_struct * loss_struct)
+        val_loss += loss_species
 
         # Calculate Accuracy for Species
         preds = torch.argmax(species_logits, dim=1)
@@ -78,7 +85,8 @@ class OntarioPretrainTask(pl.LightningModule):
 
         self.log("val_loss", val_loss, on_epoch=True, prog_bar=True, sync_dist=True)
         self.log("val_acc", acc, on_epoch=True, prog_bar=True, sync_dist=True)
-        self.log("val_h95_rmse", torch.sqrt(loss_struct), on_epoch=True, sync_dist=True)
+        if self.config["mode"] == "pretext_both":
+            self.log("val_h95_rmse", torch.sqrt(loss_struct), on_epoch=True, sync_dist=True)
 
         return val_loss
 
@@ -88,7 +96,7 @@ class OntarioPretrainTask(pl.LightningModule):
             lr=self.config["lr"],
             weight_decay=self.config.get("weight_decay", 1e-4),
         )
-        scheduler = optim.lr_scheduler.CosineAnnealingLR(
-            optimizer, T_max=self.config["max_epochs"]
+        scheduler = torch.optim.lr_scheduler.StepLR(
+            optimizer, step_size=10, gamma=0.1
         )
         return [optimizer], [scheduler]

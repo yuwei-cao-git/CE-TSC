@@ -6,7 +6,7 @@ import torch
 from torch.utils.data import Dataset, DataLoader
 from pytorch_lightning import LightningDataModule
 
-from .data_utils import forest_pretext_transform
+from .data_utils import forest_pretext_transform, center_xy_only, normalize_point_cloud
 
 ONTARIO_ECOREGIONS = [
     "2E",
@@ -30,7 +30,6 @@ class OntarioPretextDataset(Dataset):
         self,
         manifest_df,
         data_root,
-        eco_column="ecoregion_idx",
         transform=None,
         rotate=False,
     ):
@@ -63,16 +62,18 @@ class OntarioPretextDataset(Dataset):
             idx_pts = np.random.choice(n_points, self.num_points, replace=False)
             pc_raw = pc_raw[idx_pts]
 
+        pc = center_xy_only(pc_raw)
+
         # 2. Augmentation (Rotation/Scaling/Jitter)
         # Apply these to the 'raw' meter-scale points first
         if self.transform:
-            pc_raw, _, _ = forest_pretext_transform(
-                pc_raw, pc_feat=None, target=None, rot=self.rot
+            pc, _, _ = forest_pretext_transform(
+                pc, pc_feat=None, target=None, rot=self.rot
             )
 
-        pos = pc_raw.copy()
+        pos = pc.copy()
         # 3. Features: Normalized coordinates (consistent with Pre-training)
-        x = pc_raw / 11.28
+        x = normalize_point_cloud(pc)
 
         # 4. Return as Tensors
         return {
@@ -146,8 +147,7 @@ class PretextDataModule(LightningDataModule):
         ds = OntarioPretextDataset(
             self.train_df,
             self.data_root,
-            eco_column="ecoregion_idx",
-            transform=self.config.get("point_cloud_transform"),
+            transform=True,
             rotate=self.config.get("rotate", False),
         )
         return DataLoader(
@@ -158,8 +158,7 @@ class PretextDataModule(LightningDataModule):
     def val_dataloader(self):
         ds = OntarioPretextDataset(
             self.val_df,
-            self.data_root,
-            eco_column="ecoregion_idx"
+            self.data_root
         )
         return DataLoader(
             ds, batch_size=self.batch_size, shuffle=False, 
@@ -169,8 +168,7 @@ class PretextDataModule(LightningDataModule):
     def test_dataloader(self):
         ds = OntarioPretextDataset(
             self.test_df,
-            self.data_root,
-            eco_column="ecoregion_idx"
+            self.data_root
         )
         return DataLoader(
             ds, batch_size=self.batch_size, shuffle=False, 
