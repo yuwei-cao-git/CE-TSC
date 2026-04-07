@@ -3,7 +3,8 @@ import torch.nn as nn
 import torch.nn.functional as F
 import pytorch_lightning as pl
 from torchmetrics.regression import R2Score, MeanSquaredError
-
+from .pointnext_ontario import PointNextOntario
+from .model_utils import get_loss
 
 class TSCTuningTask(pl.LightningModule):
     def __init__(self, config, mapping_matrix, pretrained_path=None):
@@ -11,49 +12,58 @@ class TSCTuningTask(pl.LightningModule):
         self.save_hyperparameters(ignore=["mapping_matrix"])
         self.config = config
 
-        # Model
-        from .pointnext_ontario import PointNextOntario
-
+        # Determine number of output classes for this site
+        # num_site_labels will be 9 for NIF, 8 for WRF, etc.
+        self.num_site_labels = mapping_matrix.shape[1] if config["replace_head"] else 16
+        self.model_out_dim = self.num_site_labels if config["replace_head"] else 16
+        # Initialize Model
         self.model = PointNextOntario(
-            config, in_dim=3, num_species=16, num_ecoregions=11
+            config, in_dim=3, num_species=self.model_out_dim, num_ecoregions=11
         )
         self.register_buffer("mapping_matrix", mapping_matrix)
 
         if pretrained_path:
             ckpt = torch.load(pretrained_path, map_location="cpu")
             self.model.load_state_dict(ckpt["state_dict"], strict=False)
+
             print(f"--- SUCCESS: Initialized from {pretrained_path} ---")
         else:
             print("--- NOTICE: No valid pre-trained path. Training FROM SCRATCH. ---")
 
         # Metrics: Use 'global' to avoid batch-size artifacts
-        num_site_labels = mapping_matrix.shape[1]
-        self.val_r2 = R2Score(
-            num_outputs=num_site_labels, multioutput="uniform_average"
-        )
+        # self.val_r2 = R2Score(num_outputs=self.model_out_dim, multioutput="uniform_average")
+        self.val_r2 = R2Score()
         self.val_rmse = MeanSquaredError(squared=False)
 
         # Loss: KL Divergence is best for proportions (0.0 to 1.0)
         # self.criterion = nn.KLDivLoss(reduction="batchmean")
-        self.criterion = nn.MSELoss()
-
+        # self.criterion = nn.MSELoss()
+        self.loss_func = config["loss_func"]
+        self.weights = config["class_weights"]
     def forward(self, batch):
-        pred_16 = self.model(
+        pred = self.model(
             batch["pc_feat"].transpose(1, 2),
             batch["point_cloud"].transpose(1, 2),
             batch["ecoregion"],
             mode="downstream",
         )
-        # Collapse 16 -> Site Labels
-        pred_site = torch.matmul(pred_16, self.mapping_matrix)
-        # Final Softmax safety (ensures sum to 1.0 after mapping)
-        pred_site = pred_site / (pred_site.sum(dim=-1, keepdim=True) + 1e-10)
+        # --- LOGIC SWITCH ---
+        if self.config["replace_head"]:
+            # Model output already matches site labels
+            pred_site = pred
+        else:
+            # Model output is 16, must collapse via matrix
+            pred_site = torch.matmul(pred, self.mapping_matrix)
+            # Ensure normalization after matrix multiplication
+            pred_site = pred_site / (pred_site.sum(dim=-1, keepdim=True) + 1e-10)
+
         return pred_site
 
     def training_step(self, batch, batch_idx):
         pred_site = self.forward(batch)
         # Use log_softmax for numerical stability
-        loss = self.criterion(torch.log(pred_site + 1e-10), batch["label"])
+        # loss = self.criterion(pred_site, batch["label"])
+        loss = get_loss(self.loss_func, pred_site, batch["label"], self.weights)
         self.log("train_loss", loss, on_step=True, on_epoch=True, prog_bar=True)
         return loss
 
@@ -61,10 +71,11 @@ class TSCTuningTask(pl.LightningModule):
         pred_site = self.forward(batch)
         target = batch["label"]
 
-        self.val_r2.update(pred_site, target)
+        self.val_r2.update(torch.round(pred_site, decimals=1).view(-1), target.view(-1))
         self.val_rmse.update(pred_site, target)
 
-        loss = self.criterion(torch.log(pred_site + 1e-10), target)
+        # loss = self.criterion(pred_site, target)
+        loss = get_loss(self.loss_func, pred_site, batch["label"], self.weights)
         self.log("val_loss", loss, on_epoch=True, prog_bar=True, sync_dist=True)
 
     def on_validation_epoch_end(self):

@@ -66,6 +66,7 @@ class PointNextOntario(nn.Module):
             nn.LeakyReLU(),
             nn.Dropout(config.get("dp_pc", 0.5)),
             nn.Linear(256, num_species),
+            nn.Softmax(dim=-1),
         )
 
     def forward(self, pc_feat, xyz, eco_idx, mode="pretext"):
@@ -99,4 +100,4 @@ class PointNextOntario(nn.Module):
 
         elif mode == "downstream":
             comp_pred = self.composition_head(combined)
-            return F.softmax(comp_pred, dim=1)
+            return comp_pred
