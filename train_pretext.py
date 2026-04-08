@@ -1,5 +1,6 @@
 import os
 import argparse
+import torch
 import pytorch_lightning as pl
 from pytorch_lightning.loggers import WandbLogger
 from pytorch_lightning.callbacks import (
@@ -36,7 +37,7 @@ def main():
     parser.add_argument("--weight_decay", type=float, default=1e-4)
     parser.add_argument("--max_epochs", type=int, default=100)
     parser.add_argument("--lambda_struct", type=float, default=0.5)
-    parser.add_argument("--dp_pc", type=float, default=0.5, help="Dropout rate")
+    parser.add_argument("--dp_pc", type=float, default=0.3, help="Dropout rate")
 
     parser.add_argument("--rot", type=bool, default=False)
     parser.add_argument("--num_workers", type=int, default=6)

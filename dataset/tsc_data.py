@@ -5,7 +5,11 @@ from torch.utils.data import Dataset, DataLoader, ConcatDataset
 from pytorch_lightning import LightningDataModule
 from os.path import join
 
-from .data_utils import forest_pretext_transform, center_xy_only, normalize_point_cloud
+from .data_utils import (
+    forest_pretext_transform,
+    center_point_cloud,
+    normalize_point_cloud,
+)
 
 # Hardcoded mapping for site-specific ecoregions
 # WRF, RMF -> 3E | NIF, OVF -> 5E
@@ -35,22 +39,22 @@ class TSCDataset(Dataset):
         label = data["label"].astype(np.float32)  # (num_species,)
 
         # 1. Height-preserving centering
-        pc = center_xy_only(coords)
+        pc = center_point_cloud(coords)
 
-        # 2. Apply the same Stage A transformations
+        # 2. Features: Normalized coordinates
+        feats = normalize_point_cloud(pc)
+
+        # 3. Apply the same Stage A transformations
         if self.transform:
             # Reusing your pointCloudTransform function
-            pc, _, _ = forest_pretext_transform(
-                pc, pc_feat=None, target=None, rot=self.rotate
+            pc, feats, label = forest_pretext_transform(
+                pc, pc_feat=feats, target=label, rot=self.rotate
             )
-        pos = pc.copy()
-        # 3. Features: Normalized coordinates
-        x = normalize_point_cloud(pc)
 
         return {
-            "point_cloud": torch.from_numpy(pos).float(),  # 'pos' for grouping
-            "pc_feat": torch.from_numpy(x).float(),  # 'x' as input feature
-            "label": torch.from_numpy(label).float(),  # Composition vector
+            "point_cloud": torch.from_numpy(pc).float(),
+            "pc_feat": torch.from_numpy(feats).float(), 
+            "label": torch.from_numpy(label).float(),
             "ecoregion": torch.tensor(self.eco_idx, dtype=torch.long),
         }
 
@@ -110,7 +114,7 @@ class TSCDataModule(LightningDataModule):
             batch_size=self.batch_size,
             shuffle=True,
             num_workers=self.num_workers,
-            persistent_workers=True,
+            drop_last=True,
         )
 
     def val_dataloader(self):
@@ -119,7 +123,7 @@ class TSCDataModule(LightningDataModule):
             batch_size=self.batch_size,
             shuffle=False,
             num_workers=self.num_workers,
-            persistent_workers=True,
+            drop_last=True,
         )
 
     def test_dataloader(self):
@@ -128,4 +132,5 @@ class TSCDataModule(LightningDataModule):
             batch_size=self.batch_size,
             shuffle=False,
             num_workers=self.num_workers,
+            drop_last=False,
         )

@@ -99,7 +99,7 @@ def main():
     # A. Determine Site Name (e.g., 'WRF') and generate mapping matrix
     site_key = args.dataset.split("_")[0].upper()
     mapping_matrix = get_mapping_matrix(site_key)
-    print(f"--- Initializing for {site_key} with {config["num_species"]} labels ---")
+    print(f"--- Initializing for {site_key} with {config['num_species']} labels ---")
     # 1. Setup Data
     # Note: We still pass the transform config if you want to use the same augmentations
     dm = TSCDataModule(config)

@@ -99,9 +99,9 @@ class PointNextOntario(nn.Module):
         global_features = self.backbone(pc_feat, xyz)  # Output: (B, emb_dims, N)
         global_features = self.bn_out(global_features)
         global_avg = global_features.mean(dim=-1)  # (B, emb_dims)
-        global_max = global_features.max(dim=-1)[0]
-        combined = torch.cat([global_avg, global_max], dim=-1)
-        out = self.act(combined)
+        # global_max = global_features.max(dim=-1)[0]
+        # combined = torch.cat([global_avg, global_max], dim=-1)
+        out = self.act(global_avg)
 
         # 2. Inject Ecoregion Context
         if eco_idx is not None and self.config.get("eco_emb_dim", 0) > 0:

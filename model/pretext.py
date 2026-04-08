@@ -31,11 +31,11 @@ class OntarioPretrainTask(pl.LightningModule):
     def forward(self, batch):
         # PointNext package expects (B, C, N)
         # Our Dataset returns (B, N, C)
-        x = batch["x"].transpose(1, 2)  # Standardized features
-        pos = batch["pos"].transpose(1, 2)  # Raw/Centered coords for grouping
+        pc_feat = batch["pc_feat"].transpose(1, 2)  # Standardized coords
+        xyz = batch["point_cloud"].transpose(1, 2)  # Centered coords for grouping
         eco_idx = batch["ecoregion"] if self.config["eco_emb_dim"] > 0 else None
 
-        return self.model(x, pos, eco_idx, mode=self.config["mode"])
+        return self.model(pc_feat, xyz, eco_idx, mode=self.config["mode"])
 
     def training_step(self, batch, batch_idx):
         total_loss = 0.0

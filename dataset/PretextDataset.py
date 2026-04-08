@@ -6,7 +6,11 @@ import torch
 from torch.utils.data import Dataset, DataLoader
 from pytorch_lightning import LightningDataModule
 
-from .data_utils import forest_pretext_transform, center_xy_only, normalize_point_cloud
+from .data_utils import (
+    forest_pretext_transform,
+    center_point_cloud,
+    normalize_point_cloud,
+)
 
 ONTARIO_ECOREGIONS = [
     "2E",
@@ -62,23 +66,23 @@ class OntarioPretextDataset(Dataset):
             idx_pts = np.random.choice(n_points, self.num_points, replace=False)
             pc_raw = pc_raw[idx_pts]
 
-        pc = center_xy_only(pc_raw)
+        # 1. Height-preserving centering
+        pc = center_point_cloud(pc_raw)
 
-        # 2. Augmentation (Rotation/Scaling/Jitter)
-        # Apply these to the 'raw' meter-scale points first
+        # 2. Features: Normalized coordinates
+        feats = normalize_point_cloud(pc)
+
+        # 3. Apply the same Stage A transformations
         if self.transform:
-            pc, _, _ = forest_pretext_transform(
-                pc, pc_feat=None, target=None, rot=self.rot
+            # Reusing your pointCloudTransform function
+            pc, feats, _ = forest_pretext_transform(
+                pc, pc_feat=feats, target=None, rot=self.rotate
             )
-
-        pos = pc.copy()
-        # 3. Features: Normalized coordinates (consistent with Pre-training)
-        x = normalize_point_cloud(pc)
 
         # 4. Return as Tensors
         return {
-            "pos": torch.from_numpy(pos).float(),
-            "x": torch.from_numpy(x).float(),
+            "point_cloud": torch.from_numpy(pc).float(),
+            "pc_feat": torch.from_numpy(feats).float(),
             "species_label": torch.tensor(
                 row["label_idx"], dtype=torch.long
             ),  # Contiguous 0-15
