@@ -16,6 +16,7 @@ class TSCTuningTask(pl.LightningModule):
         # num_site_labels will be 9 for NIF, 8 for WRF, etc.
         # self.num_site_labels = mapping_matrix.shape[1] if config["replace_head"] else 16
         self.model_out_dim = config["num_species"] if config["replace_head"] else 16
+        print(f"num_species: {config['num_species']}")
 
         # Initialize Model
         self.model = PointNextOntario(config, in_dim=3, num_species=self.model_out_dim, num_ecoregions=11)
@@ -71,7 +72,7 @@ class TSCTuningTask(pl.LightningModule):
         pred_site = self.forward(batch)
         target = batch["label"]
 
-        self.val_r2.update(torch.round(pred_site, decimals=1).view(-1), target.view(-1))
+        self.val_r2.update(torch.round(pred_site, decimals=2).view(-1), target.view(-1))
         self.val_rmse.update(pred_site, target)
 
         # loss = self.criterion(pred_site, target)

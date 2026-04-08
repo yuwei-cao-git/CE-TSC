@@ -26,7 +26,7 @@ def main():
 
     # Model Params (Must match Stage A)
     parser.add_argument("--encoder", type=str, default="b")
-    parser.add_argument("--emb_dims", type=int, default=512)
+    parser.add_argument("--emb_dims", type=int, default=768)
     parser.add_argument("--num_species", type=int, default=16)
     parser.add_argument("--num_ecoregions", type=int, default=11)
     parser.add_argument("--eco_emb_dim", type=int, default=16, help="Ecoregion embedding size")
@@ -99,7 +99,7 @@ def main():
     # A. Determine Site Name (e.g., 'WRF') and generate mapping matrix
     site_key = args.dataset.split("_")[0].upper()
     mapping_matrix = get_mapping_matrix(site_key)
-    print(f"--- Initializing for {site_key} with {mapping_matrix.shape[1]} labels ---")
+    print(f"--- Initializing for {site_key} with {config["num_species"]} labels ---")
     # 1. Setup Data
     # Note: We still pass the transform config if you want to use the same augmentations
     dm = TSCDataModule(config)
@@ -128,9 +128,9 @@ def main():
         dirpath=os.path.join(
             os.environ.get("SCRATCH", "."), "checkpoints", f"tsc_{args.dataset}"
         ),
-        filename="best-tsc-{epoch:02d}-{val_rmse:.3f}",
-        monitor="val_rmse",
-        mode="min",
+        filename="best-tsc-{epoch:02d}-{val_r2:.3f}",
+        monitor="val_r2",
+        mode="max",
         save_top_k=1,
     )
 
@@ -138,7 +138,6 @@ def main():
     trainer = pl.Trainer(
         max_epochs=args.max_epochs,
         accelerator="gpu",
-        devices=1,  # Site-specific datasets are smaller; 1 GPU is usually enough
         logger=wandb_logger,
         callbacks=[
             checkpoint_callback,
