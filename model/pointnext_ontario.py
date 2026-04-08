@@ -27,12 +27,14 @@ class PointNextOntario(nn.Module):
 
         # 3. Context: Ecoregion Embedding
         # Allows model to interpret structure differently based on geography
-        # self.eco_emb_dim = config.get("eco_emb_dim", 16)
-        # self.eco_embedding = nn.Embedding(num_ecoregions, self.eco_emb_dim)
+        if config["eco_emb_dim"] != 0:
+            self.eco_emb_dim = config["eco_emb_dim"]
+            self.eco_embedding = nn.Embedding(num_ecoregions, self.eco_emb_dim)
 
-        # 4. Total latent dimension after concatenation
-        # latent_dim = config["emb_dims"] + self.eco_emb_dim
-        latent_dim = config["emb_dims"]
+            # 4. Total latent dimension after concatenation
+            latent_dim = config["emb_dims"] + self.eco_emb_dim
+        else:
+            latent_dim = config["emb_dims"]
 
         # --- PRETEXT HEADS ---
         # Task A: Species Classification (Weak Supervision)
@@ -74,7 +76,7 @@ class PointNextOntario(nn.Module):
         pc_feat: (B, 3, N) Standardized coordinates as features
         xyz:     (B, 3, N) Centered coordinates for grouping
         eco_idx: (B,) Integer IDs for ecoregions
-        mode:    'pretext' or 'downstream'
+        mode:    'pretext_lsc' 'pretext_both' or 'downstream'
         """
         # 1. Feature Extraction
         # Note: PyPI PointNext expects (B, C, N)
@@ -86,7 +88,7 @@ class PointNextOntario(nn.Module):
         global_features = self.act(global_features)
 
         # 2. Inject Ecoregion Context
-        if eco_idx !=-1:
+        if eco_idx != -1:
             eco_feat = self.eco_embedding(eco_idx)  # (B, eco_emb_dim)
             combined = torch.cat([global_features, eco_feat], dim=-1)  # (B, latent_dim)
         else:

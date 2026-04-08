@@ -44,7 +44,7 @@ class TSCTuningTask(pl.LightningModule):
         pred = self.model(
             batch["pc_feat"].transpose(1, 2),
             batch["point_cloud"].transpose(1, 2),
-            -1,
+            batch["ecoregion"] if self.config["eco_emb_dim"] != 0 else -1,
             mode="downstream",
         )
         # --- LOGIC SWITCH ---
@@ -94,7 +94,7 @@ class TSCTuningTask(pl.LightningModule):
         optimizer = torch.optim.AdamW(
             self.parameters(), lr=self.config.get("lr", 1e-4), weight_decay=0.0001
         )
-        
+
         # scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode="min", factor=0.5, patience=3, min_lr=1e-6)
         # return {"optimizer": optimizer,"lr_scheduler": {"scheduler": scheduler, "monitor": "val_loss"}}
 
