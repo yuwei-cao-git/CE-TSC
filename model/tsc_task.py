@@ -14,12 +14,12 @@ class TSCTuningTask(pl.LightningModule):
 
         # Determine number of output classes for this site
         # num_site_labels will be 9 for NIF, 8 for WRF, etc.
-        self.num_site_labels = mapping_matrix.shape[1] if config["replace_head"] else 16
-        self.model_out_dim = self.num_site_labels if config["replace_head"] else 16
+        # self.num_site_labels = mapping_matrix.shape[1] if config["replace_head"] else 16
+        self.model_out_dim = config["num_species"] if config["replace_head"] else 16
 
         # Initialize Model
         self.model = PointNextOntario(config, in_dim=3, num_species=self.model_out_dim, num_ecoregions=11)
-        self.register_buffer("mapping_matrix", mapping_matrix)
+        # self.register_buffer("mapping_matrix", mapping_matrix)
 
         if pretrained_path:
             ckpt = torch.load(pretrained_path, map_location="cpu")

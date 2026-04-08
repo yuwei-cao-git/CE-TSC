@@ -34,7 +34,7 @@ def main():
 
     # Tuning Hyperparams
     parser.add_argument("--lr", type=float, default=1e-4, help="Lower LR for fine-tuning")
-    parser.add_argument("--batch_size", type=int, default=32)
+    parser.add_argument("--batch_size", type=int, default=64)
     parser.add_argument("--max_epochs", type=int, default=100)
     parser.add_argument("--num_workers", type=int, default=6)
     parser.add_argument("--loss_func", type=str, default="mse")
