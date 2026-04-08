@@ -27,12 +27,10 @@ class PointNextOntario(nn.Module):
 
         # 3. Context: Ecoregion Embedding
         # Allows model to interpret structure differently based on geography
-        if config["eco_emb_dim"] != 0:
-            self.eco_emb_dim = config["eco_emb_dim"]
-            self.eco_embedding = nn.Embedding(num_ecoregions, self.eco_emb_dim)
-
+        if config["eco_emb_dim"] > 0:
+            self.eco_embedding = nn.Embedding(num_ecoregions, config["eco_emb_dim"])
             # 4. Total latent dimension after concatenation
-            latent_dim = config["emb_dims"] + self.eco_emb_dim
+            latent_dim = config["emb_dims"] + config["eco_emb_dim"]
         else:
             latent_dim = config["emb_dims"]
 
@@ -88,11 +86,11 @@ class PointNextOntario(nn.Module):
         global_features = self.act(global_features)
 
         # 2. Inject Ecoregion Context
-        if eco_idx != -1:
+        if eco_idx is None:
+            combined = global_features
+        else:
             eco_feat = self.eco_embedding(eco_idx)  # (B, eco_emb_dim)
             combined = torch.cat([global_features, eco_feat], dim=-1)  # (B, latent_dim)
-        else:
-            combined = global_features
 
         # 3. Branching Logic
         if mode == "pretext_lsc":

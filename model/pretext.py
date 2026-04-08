@@ -33,7 +33,7 @@ class OntarioPretrainTask(pl.LightningModule):
         # Our Dataset returns (B, N, C)
         x = batch["x"].transpose(1, 2)  # Standardized features
         pos = batch["pos"].transpose(1, 2)  # Raw/Centered coords for grouping
-        eco_idx = batch["ecoregion"] if self.config["eco_emb_dim"] != 0 else -1 
+        eco_idx = batch["ecoregion"] if self.config["eco_emb_dim"] > 0 else None
 
         return self.model(x, pos, eco_idx, mode=self.config["mode"])
 

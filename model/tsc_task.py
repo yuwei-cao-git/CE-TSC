@@ -44,7 +44,7 @@ class TSCTuningTask(pl.LightningModule):
         pred = self.model(
             batch["pc_feat"].transpose(1, 2),
             batch["point_cloud"].transpose(1, 2),
-            batch["ecoregion"] if self.config["eco_emb_dim"] != 0 else -1,
+            batch["ecoregion"] if self.config["eco_emb_dim"] > 0 else None,
             mode="downstream",
         )
         # --- LOGIC SWITCH ---
