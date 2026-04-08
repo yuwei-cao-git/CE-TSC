@@ -106,7 +106,7 @@ class PointNextOntario(nn.Module):
         # 2. Inject Ecoregion Context
         if eco_idx is not None and self.config.get("eco_emb_dim", 0) > 0:
             eco_feat = self.eco_embedding(eco_idx)  # (B, eco_emb_dim)
-            out = torch.cat([global_features, eco_feat], dim=-1)  # (B, latent_dim)
+            out = torch.cat([out, eco_feat], dim=-1)  # (B, latent_dim)
 
         # 3. Branching Logic
         if mode == "pretext_lsc":
