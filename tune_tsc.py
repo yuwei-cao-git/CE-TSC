@@ -94,6 +94,8 @@ def main():
         config["class_weights"] = torch.tensor(class_weights).float()
     else:
         config["class_weights"] = None
+    if config["replace_head"]:
+        config["num_species"] = len(class_weights)
     # A. Determine Site Name (e.g., 'WRF') and generate mapping matrix
     site_key = args.dataset.split("_")[0].upper()
     mapping_matrix = get_mapping_matrix(site_key)
@@ -113,7 +115,7 @@ def main():
     # 3. Logger & Callbacks
     wandb_logger = WandbLogger(
         project="Ontario_Forest_TSC_FineTune",
-        name=f"FineTune_{args.dataset}_LR{args.lr}",
+        name=f"FineTune_{args.dataset}_LR{args.lr}_ENC{args.encoder}{args.emb_dims}_ECO{args.eco_emb_dim}",
         config=config,
     )
     early_stopping = EarlyStopping(
