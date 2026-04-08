@@ -27,11 +27,12 @@ class PointNextOntario(nn.Module):
 
         # 3. Context: Ecoregion Embedding
         # Allows model to interpret structure differently based on geography
-        self.eco_emb_dim = config.get("eco_emb_dim", 16)
-        self.eco_embedding = nn.Embedding(num_ecoregions, self.eco_emb_dim)
+        # self.eco_emb_dim = config.get("eco_emb_dim", 16)
+        # self.eco_embedding = nn.Embedding(num_ecoregions, self.eco_emb_dim)
 
         # 4. Total latent dimension after concatenation
-        latent_dim = config["emb_dims"] + self.eco_emb_dim
+        # latent_dim = config["emb_dims"] + self.eco_emb_dim
+        latent_dim = config["emb_dims"]
 
         # --- PRETEXT HEADS ---
         # Task A: Species Classification (Weak Supervision)
@@ -39,11 +40,11 @@ class PointNextOntario(nn.Module):
             nn.Linear(latent_dim, 512),
             nn.BatchNorm1d(512),
             nn.LeakyReLU(),
-            nn.Dropout(config.get("dp_pc", 0.5)),
+            nn.Dropout(config.get("dp_pc", 0.3)),
             nn.Linear(512, 256),
             nn.BatchNorm1d(256),
             nn.LeakyReLU(),
-            nn.Dropout(config.get("dp_pc", 0.5)),
+            nn.Dropout(config.get("dp_pc", 0.3)),
             nn.Linear(256, num_species),
         )
 
@@ -60,13 +61,12 @@ class PointNextOntario(nn.Module):
             nn.Linear(latent_dim, 512),
             nn.BatchNorm1d(512),
             nn.LeakyReLU(),
-            nn.Dropout(config.get("dp_pc", 0.5)),
+            nn.Dropout(config.get("dp_pc", 0.3)),
             nn.Linear(512, 256),
             nn.BatchNorm1d(256),
             nn.LeakyReLU(),
-            nn.Dropout(config.get("dp_pc", 0.5)),
+            nn.Dropout(config.get("dp_pc", 0.3)),
             nn.Linear(256, num_species),
-            nn.Softmax(dim=-1),
         )
 
     def forward(self, pc_feat, xyz, eco_idx, mode="pretext"):
@@ -86,8 +86,11 @@ class PointNextOntario(nn.Module):
         global_features = self.act(global_features)
 
         # 2. Inject Ecoregion Context
-        eco_feat = self.eco_embedding(eco_idx)  # (B, eco_emb_dim)
-        combined = torch.cat([global_features, eco_feat], dim=-1)  # (B, latent_dim)
+        if eco_idx !=-1:
+            eco_feat = self.eco_embedding(eco_idx)  # (B, eco_emb_dim)
+            combined = torch.cat([global_features, eco_feat], dim=-1)  # (B, latent_dim)
+        else:
+            combined = global_features
 
         # 3. Branching Logic
         if mode == "pretext_lsc":
@@ -100,4 +103,5 @@ class PointNextOntario(nn.Module):
 
         elif mode == "downstream":
             comp_pred = self.composition_head(combined)
-            return comp_pred
+            preds = F.softmax(comp_pred, dim=1)
+            return preds

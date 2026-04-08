@@ -3,7 +3,11 @@ import argparse
 import torch
 import pytorch_lightning as pl
 from pytorch_lightning.loggers import WandbLogger
-from pytorch_lightning.callbacks import ModelCheckpoint, LearningRateMonitor
+from pytorch_lightning.callbacks import (
+    ModelCheckpoint,
+    LearningRateMonitor,
+    EarlyStopping,
+)
 
 from dataset.tsc_data import TSCDataModule
 from dataset.mapping_utils import get_mapping_matrix
@@ -21,7 +25,7 @@ def main():
     parser.add_argument("--pretrained_ckpt", type=str, default=None, help="Path to .ckpt or leave empty for scratch")
 
     # Model Params (Must match Stage A)
-    parser.add_argument("--encoder", type=str, default="s")
+    parser.add_argument("--encoder", type=str, default="b")
     parser.add_argument("--emb_dims", type=int, default=512)
     parser.add_argument("--num_species", type=int, default=16)
     parser.add_argument("--num_ecoregions", type=int, default=11)
@@ -111,7 +115,12 @@ def main():
         name=f"FineTune_{args.dataset}_LR{args.lr}",
         config=config,
     )
-
+    early_stopping = EarlyStopping(
+        monitor="val_r2",  # Metric to monitor
+        patience=10,  # Number of epochs with no improvement after which training will be stopped
+        mode="max",  # Set "min" for validation loss
+        verbose=True,
+    )
     checkpoint_callback = ModelCheckpoint(
         dirpath=os.path.join(
             os.environ.get("SCRATCH", "."), "checkpoints", f"tsc_{args.dataset}"
@@ -128,7 +137,10 @@ def main():
         accelerator="gpu",
         devices=1,  # Site-specific datasets are smaller; 1 GPU is usually enough
         logger=wandb_logger,
-        callbacks=[checkpoint_callback, LearningRateMonitor(logging_interval="step")]
+        callbacks=[
+            checkpoint_callback,
+            early_stopping, LearningRateMonitor(logging_interval="step"),
+        ],
     )
 
     trainer.fit(model, datamodule=dm)

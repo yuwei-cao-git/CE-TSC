@@ -91,16 +91,13 @@ class TSCDataModule(LightningDataModule):
             train_ds = TSCDataset(train_files, self.dataset_name, rotate=False)
 
             # Augmented Dataset (Site-specific tuning often needs more augs)
-            if self.config.get("point_cloud_transform"):
-                aug_ds = TSCDataset(
-                    train_files,
-                    self.dataset_name,
-                    rotate=self.config["rotate"],
-                    transform=self.config["point_cloud_transform"],
-                )
-                self.train_dataset = ConcatDataset([train_ds, aug_ds])
-            else:
-                self.train_dataset = train_ds
+            aug_ds = TSCDataset(
+                train_files,
+                self.dataset_name,
+                rotate=False,
+                transform=True,
+            )
+            self.train_dataset = ConcatDataset([train_ds, aug_ds])
 
             self.val_dataset = TSCDataset(val_files, self.dataset_name)
 

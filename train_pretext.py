@@ -2,7 +2,11 @@ import os
 import argparse
 import pytorch_lightning as pl
 from pytorch_lightning.loggers import WandbLogger
-from pytorch_lightning.callbacks import ModelCheckpoint, LearningRateMonitor
+from pytorch_lightning.callbacks import (
+    ModelCheckpoint,
+    LearningRateMonitor,
+    EarlyStopping,
+)
 
 from dataset.PretextDataset import PretextDataModule
 from model.pretext import OntarioPretrainTask
@@ -20,7 +24,7 @@ def main():
 
     # Model Architecture (Critical for the PyPI PointNext)
     parser.add_argument("--mode", type=str, default="pretext_both", choices=["pretext_both", "pretext_lsc"],)
-    parser.add_argument("--encoder", type=str, default="s", choices=["s", "b", "l", "xl"])
+    parser.add_argument("--encoder", type=str, default="b", choices=["s", "b", "l", "xl"])
     parser.add_argument("--emb_dims", type=int, default=512, help="Latent dimension of backbone")
     parser.add_argument("--eco_emb_dim", type=int, default=16, help="Ecoregion embedding size")
 
@@ -56,6 +60,13 @@ def main():
 
     # 6. Checkpoint Callback (Saves to unique folder per experiment)
     ckpt_path = os.path.join("checkpoints", args.experiment_name)
+
+    early_stopping = EarlyStopping(
+        monitor="val_loss",  # Metric to monitor
+        patience=10,  # Number of epochs with no improvement after which training will be stopped
+        mode="min",  # Set "min" for validation loss
+        verbose=True,
+    )
     checkpoint_callback = ModelCheckpoint(
         dirpath=ckpt_path,
         filename="best-{epoch:02d}-{val_acc:.2f}",
@@ -68,8 +79,11 @@ def main():
     trainer = pl.Trainer(
         max_epochs=args.max_epochs,
         logger=wandb_logger,
-        callbacks=[checkpoint_callback, LearningRateMonitor(logging_interval='step')],
-        strategy="auto"
+        callbacks=[
+            checkpoint_callback,
+            early_stopping, LearningRateMonitor(logging_interval="step"),
+        ],
+        strategy="auto",
     )
 
     trainer.fit(model, datamodule=dm)

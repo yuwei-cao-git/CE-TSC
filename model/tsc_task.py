@@ -16,10 +16,9 @@ class TSCTuningTask(pl.LightningModule):
         # num_site_labels will be 9 for NIF, 8 for WRF, etc.
         self.num_site_labels = mapping_matrix.shape[1] if config["replace_head"] else 16
         self.model_out_dim = self.num_site_labels if config["replace_head"] else 16
+
         # Initialize Model
-        self.model = PointNextOntario(
-            config, in_dim=3, num_species=self.model_out_dim, num_ecoregions=11
-        )
+        self.model = PointNextOntario(config, in_dim=3, num_species=self.model_out_dim, num_ecoregions=11)
         self.register_buffer("mapping_matrix", mapping_matrix)
 
         if pretrained_path:
@@ -40,11 +39,12 @@ class TSCTuningTask(pl.LightningModule):
         # self.criterion = nn.MSELoss()
         self.loss_func = config["loss_func"]
         self.weights = config["class_weights"]
+
     def forward(self, batch):
         pred = self.model(
             batch["pc_feat"].transpose(1, 2),
             batch["point_cloud"].transpose(1, 2),
-            batch["ecoregion"],
+            -1,
             mode="downstream",
         )
         # --- LOGIC SWITCH ---
@@ -92,10 +92,11 @@ class TSCTuningTask(pl.LightningModule):
     def configure_optimizers(self):
         # Use AdamW with a slightly higher weight decay for fine-tuning
         optimizer = torch.optim.AdamW(
-            self.parameters(), lr=self.config.get("lr", 1e-4), weight_decay=0.05
+            self.parameters(), lr=self.config.get("lr", 1e-4), weight_decay=0.0001
         )
-        # Cosine Annealing helps the R2 flip from negative to positive smoothly
-        scheduler = torch.optim.lr_scheduler.StepLR(
-            optimizer, step_size=10, gamma=0.1
-        )
+        
+        # scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode="min", factor=0.5, patience=3, min_lr=1e-6)
+        # return {"optimizer": optimizer,"lr_scheduler": {"scheduler": scheduler, "monitor": "val_loss"}}
+
+        scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=10, gamma=0.1)
         return [optimizer], [scheduler]
