@@ -3,6 +3,7 @@ import torch.nn as nn
 import torch.optim as optim
 import pytorch_lightning as pl
 from .pointnext_ontario import PointNextOntario
+from .model_utils import get_loss, initialize_weights
 
 
 class OntarioPretrainTask(pl.LightningModule):
@@ -19,6 +20,7 @@ class OntarioPretrainTask(pl.LightningModule):
             num_species=config["num_species"],
             num_ecoregions=config["num_ecoregions"]
         )
+        initialize_weights(self.model)
 
         # Loss Functions
         self.ce_loss = nn.CrossEntropyLoss()
@@ -35,7 +37,7 @@ class OntarioPretrainTask(pl.LightningModule):
         xyz = batch["point_cloud"].transpose(1, 2)  # Centered coords for grouping
         eco_idx = batch["ecoregion"] if self.config["eco_emb_dim"] > 0 else None
 
-        return self.model(pc_feat, xyz, eco_idx, mode=self.config["mode"])
+        return self.model(xyz, pc_feat, eco_idx, mode=self.config["mode"])
 
     def training_step(self, batch, batch_idx):
         total_loss = 0.0

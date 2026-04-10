@@ -21,10 +21,9 @@ ECO_TO_IDX = {name: i for i, name in enumerate(ONTARIO_ECOREGIONS)}
 
 
 class TSCDataset(Dataset):
-    def __init__(self, files, dataset_name, rotate=False, transform=None):
+    def __init__(self, files, dataset_name, transform=None):
         self.files = files
         self.transform = transform
-        self.rotate = rotate
 
         # Determine ecoregion index from the site name
         eco_str = SITE_ECO_MAP.get(dataset_name, "3E")
@@ -35,8 +34,8 @@ class TSCDataset(Dataset):
 
     def __getitem__(self, idx):
         data = np.load(self.files[idx], allow_pickle=True)
-        coords = data["point_cloud"].astype(np.float32)  # (N, 3)
-        label = data["label"].astype(np.float32)  # (num_species,)
+        coords = data["point_cloud"]  # (N, 3)
+        label = data["label"]  # (num_species,)
 
         # 1. Height-preserving centering
         pc = center_point_cloud(coords)
@@ -48,7 +47,7 @@ class TSCDataset(Dataset):
         if self.transform:
             # Reusing your pointCloudTransform function
             pc, feats, label = forest_pretext_transform(
-                pc, pc_feat=feats, target=label, rot=self.rotate
+                pc, pc_feat=feats, target=label, rot=False
             )
 
         return {
@@ -64,7 +63,7 @@ class TSCDataModule(LightningDataModule):
         super().__init__()
         self.config = config
         self.batch_size = config["batch_size"]
-        self.num_workers = config.get("num_workers", 6)
+        self.num_workers = 2 #config.get("num_workers", 6)
 
         # Site name (e.g. 'wrf_sp') used for ecoregion mapping
         self.dataset_name = config["dataset"]
@@ -92,13 +91,12 @@ class TSCDataModule(LightningDataModule):
             val_files = self._get_files("val")
 
             # Clean Dataset
-            train_ds = TSCDataset(train_files, self.dataset_name, rotate=False)
+            train_ds = TSCDataset(train_files, self.dataset_name)
 
             # Augmented Dataset (Site-specific tuning often needs more augs)
             aug_ds = TSCDataset(
                 train_files,
                 self.dataset_name,
-                rotate=False,
                 transform=True,
             )
             self.train_dataset = ConcatDataset([train_ds, aug_ds])

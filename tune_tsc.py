@@ -10,7 +10,7 @@ from pytorch_lightning.callbacks import (
 )
 
 from dataset.tsc_data import TSCDataModule
-from dataset.mapping_utils import get_mapping_matrix
+# from dataset.mapping_utils import get_mapping_matrix
 from model.tsc_task import TSCTuningTask
 
 
@@ -38,6 +38,7 @@ def main():
     parser.add_argument("--max_epochs", type=int, default=100)
     parser.add_argument("--num_workers", type=int, default=6)
     parser.add_argument("--loss_func", type=str, default="mse")
+    parser.add_argument("--mode", type=str, default="downstream")
 
     args = parser.parse_args()
     config = vars(args)
@@ -97,9 +98,11 @@ def main():
     if config["replace_head"]:
         config["num_species"] = len(class_weights)
     # A. Determine Site Name (e.g., 'WRF') and generate mapping matrix
-    site_key = args.dataset.split("_")[0].upper()
-    mapping_matrix = get_mapping_matrix(site_key)
-    print(f"--- Initializing for {site_key} with {config['num_species']} labels ---")
+    # site_key = args.dataset.split("_")[0].upper()
+    # mapping_matrix = get_mapping_matrix(site_key)
+    # print(f"--- Initializing for {site_key} with {config['num_species']} labels ---")
+
+    pl.seed_everything(123)
     # 1. Setup Data
     # Note: We still pass the transform config if you want to use the same augmentations
     dm = TSCDataModule(config)
@@ -108,7 +111,7 @@ def main():
     # The TSCTuningTask handles strict=False loading of the backbone
     model = TSCTuningTask(
         config=config,
-        mapping_matrix=mapping_matrix,
+        mapping_matrix=None,
         pretrained_path=args.pretrained_ckpt,
     )
 
@@ -137,11 +140,14 @@ def main():
     # 4. Trainer
     trainer = pl.Trainer(
         max_epochs=args.max_epochs,
-        accelerator="gpu",
+        gradient_clip_val=0.5,
+        num_nodes=1,
+        strategy="auto",
         logger=wandb_logger,
         callbacks=[
             checkpoint_callback,
-            early_stopping, LearningRateMonitor(logging_interval="step"),
+            early_stopping,
+            LearningRateMonitor(logging_interval="step"),
         ],
     )
 

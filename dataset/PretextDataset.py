@@ -34,8 +34,7 @@ class OntarioPretextDataset(Dataset):
         self,
         manifest_df,
         data_root,
-        transform=None,
-        rotate=False,
+        transform=None
     ):
         """
         Args:
@@ -46,7 +45,6 @@ class OntarioPretextDataset(Dataset):
         self.df = manifest_df
         self.data_root = data_root
         self.transform = transform
-        self.rot = rotate
         self.num_points = 7168
 
     def __len__(self):
@@ -76,7 +74,7 @@ class OntarioPretextDataset(Dataset):
         if self.transform:
             # Reusing your pointCloudTransform function
             pc, feats, _ = forest_pretext_transform(
-                pc, pc_feat=feats, target=None, rot=self.rotate
+                pc, pc_feat=feats, target=None, rot=False
             )
 
         # 4. Return as Tensors
@@ -151,8 +149,7 @@ class PretextDataModule(LightningDataModule):
         ds = OntarioPretextDataset(
             self.train_df,
             self.data_root,
-            transform=True,
-            rotate=self.config.get("rotate", False),
+            transform=True
         )
         return DataLoader(
             ds, batch_size=self.batch_size, shuffle=True, 

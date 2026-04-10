@@ -50,7 +50,6 @@ def get_class_grw_weight(class_weight, exp_scale=0.2):
     return class_weight
 
 def get_loss(loss_func_name, outputs, targets, weights=None):
-    weights = weights.to(outputs.device) if weights is not None else None
     if loss_func_name == "wmse":
         return calc_wmse_loss(outputs, targets, weights)
     elif loss_func_name == "ewmse":
@@ -58,3 +57,16 @@ def get_loss(loss_func_name, outputs, targets, weights=None):
         return calc_wmse_loss(outputs, targets, eweights)
     elif loss_func_name == "mse":
         return calc_mse_loss(outputs, targets)
+
+
+def initialize_weights(m):
+    # A recursive function to apply initialization to all relevant layers
+    if isinstance(m, nn.Linear):
+        # Kaiming/He initialization for linear layers followed by ReLU
+        nn.init.kaiming_uniform_(m.weight, nonlinearity="relu")
+        if m.bias is not None:
+            nn.init.constant_(m.bias, 0)
+    elif isinstance(m, nn.Conv2d):
+        nn.init.kaiming_uniform_(m.weight, nonlinearity="relu")
+        if m.bias is not None:
+            nn.init.constant_(m.bias, 0)

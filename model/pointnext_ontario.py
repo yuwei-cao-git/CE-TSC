@@ -42,51 +42,49 @@ class PointNextOntario(nn.Module):
         self.bn_out = nn.BatchNorm1d(config["emb_dims"])
         self.act = nn.ReLU()
 
-        latent_dim = config["emb_dims"]
-
         # 3. Context: Ecoregion Embedding
         # Allows model to interpret structure differently based on geography
         if config["eco_emb_dim"] > 0:
             self.eco_embedding = nn.Embedding(num_ecoregions, config["eco_emb_dim"])
-            # 4. Total latent dimension after concatenation
-            latent_dim += config["eco_emb_dim"]
 
         self.disalign_head = PCCAHead(num_species, num_species)
 
         # --- PRETEXT HEADS ---
-        # Task A: Species Classification (Weak Supervision)
-        self.species_head = nn.Sequential(
-            nn.Linear(latent_dim, 512),
-            nn.BatchNorm1d(512),
-            nn.LeakyReLU(),
-            nn.Dropout(config.get("dp_pc", 0.3)),
-            nn.Linear(512, 256),
-            nn.BatchNorm1d(256),
-            nn.LeakyReLU(),
-            nn.Dropout(config.get("dp_pc", 0.3)),
-            nn.Linear(256, num_species),
-        )
-
-        # Task B: Structural Regression (H95 Prediction)
-        self.structure_head = nn.Sequential(
-            nn.Linear(latent_dim, 128),
-            nn.ReLU(),
-            nn.Linear(128, 1),  # Raw meters (float)
-        )
+        if config["mode"] in ["pretext_lsc", "pretext_both"]:
+            # Task A: Species Classification (Weak Supervision)
+            self.species_head = nn.Sequential(
+                nn.Linear(config["emb_dims"] + config["eco_emb_dim"], 512),
+                nn.BatchNorm1d(512),
+                nn.LeakyReLU(),
+                nn.Dropout(config.get("dp_pc", 0.3)),
+                nn.Linear(512, 256),
+                nn.BatchNorm1d(256),
+                nn.LeakyReLU(),
+                nn.Dropout(config.get("dp_pc", 0.3)),
+                nn.Linear(256, num_species),
+            )
+        if config["mode"] == "pretext_both":
+            # Task B: Structural Regression (H95 Prediction)
+            self.structure_head = nn.Sequential(
+                nn.Linear(config["emb_dims"] + config["eco_emb_dim"], 128),
+                nn.ReLU(),
+                nn.Linear(128, 1),  # Raw meters (float)
+            )
 
         # --- DOWNSTREAM HEAD ---
-        # Task C: Tree Species Composition (FRI Logic)
-        self.composition_head = nn.Sequential(
-            nn.Linear(latent_dim, 512),
-            nn.BatchNorm1d(512),
-            nn.LeakyReLU(),
-            nn.Dropout(config.get("dp_pc", 0.3)),
-            nn.Linear(512, 256),
-            nn.BatchNorm1d(256),
-            nn.LeakyReLU(),
-            nn.Dropout(config.get("dp_pc", 0.3)),
-            nn.Linear(256, num_species),
-        )
+        if config["mode"] == "downstream":
+            # Task C: Tree Species Composition (FRI Logic)
+            self.composition_head = nn.Sequential(
+                nn.Linear(config["emb_dims"] + config["eco_emb_dim"], 512),
+                nn.BatchNorm1d(512),
+                nn.LeakyReLU(),
+                nn.Dropout(config.get("dp_pc", 0.3)),
+                nn.Linear(512, 256),
+                nn.BatchNorm1d(256),
+                nn.LeakyReLU(),
+                nn.Dropout(config.get("dp_pc", 0.3)),
+                nn.Linear(256, num_species),
+            )
 
     def forward(self, pc_feat, xyz, eco_idx, mode="pretext"):
         """
@@ -121,5 +119,4 @@ class PointNextOntario(nn.Module):
         elif mode == "downstream":
             comp_pred = self.composition_head(out)
             comp_pred = self.disalign_head(comp_pred)
-            preds = F.softmax(comp_pred, dim=1)
-            return preds
+            return comp_pred

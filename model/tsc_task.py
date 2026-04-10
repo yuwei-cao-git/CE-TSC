@@ -4,10 +4,11 @@ import torch.nn.functional as F
 import pytorch_lightning as pl
 from torchmetrics.regression import R2Score, MeanSquaredError
 from .pointnext_ontario import PointNextOntario
-from .model_utils import get_loss
+from .model_utils import get_loss, initialize_weights
+
 
 class TSCTuningTask(pl.LightningModule):
-    def __init__(self, config, mapping_matrix, pretrained_path=None):
+    def __init__(self, config, mapping_matrix=None, pretrained_path=None):
         super().__init__()
         self.save_hyperparameters(ignore=["mapping_matrix"])
         self.config = config
@@ -28,6 +29,7 @@ class TSCTuningTask(pl.LightningModule):
 
             print(f"--- SUCCESS: Initialized from {pretrained_path} ---")
         else:
+            initialize_weights(self.model)
             print("--- NOTICE: No valid pre-trained path. Training FROM SCRATCH. ---")
 
         # Metrics: Use 'global' to avoid batch-size artifacts
@@ -42,11 +44,16 @@ class TSCTuningTask(pl.LightningModule):
         self.weights = config["class_weights"]
 
     def forward(self, batch):
-        pred = self.model(
-            batch["pc_feat"].transpose(1, 2),
+        logits = self.model(
             batch["point_cloud"].transpose(1, 2),
+            batch["pc_feat"].transpose(1, 2),
             batch["ecoregion"] if self.config["eco_emb_dim"] > 0 else None,
             mode="downstream",
+        )
+        pred = F.softmax(logits, dim=1)
+
+        self.weights = (
+            self.weights.to(pred.device) if self.weights is not None else None
         )
         # --- LOGIC SWITCH ---
         if self.config["replace_head"]:
@@ -99,5 +106,5 @@ class TSCTuningTask(pl.LightningModule):
         # scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode="min", factor=0.5, patience=3, min_lr=1e-6)
         # return {"optimizer": optimizer,"lr_scheduler": {"scheduler": scheduler, "monitor": "val_loss"}}
 
-        scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=10, gamma=0.1)
-        return [optimizer], [scheduler]
+        scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=30, gamma=0.1)
+        return {"optimizer": optimizer, "lr_scheduler": scheduler}
