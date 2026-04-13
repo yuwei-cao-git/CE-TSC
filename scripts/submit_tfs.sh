@@ -62,6 +62,4 @@ python train_pretext.py \
     --max_epochs 200 \
     --replace_head
 
-cp -r ./checkpoints ~/scratch/CE_logs/
-
 echo "theend"

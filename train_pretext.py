@@ -58,12 +58,15 @@ def main():
     wandb_logger = WandbLogger(
         project=config["project_name"],
         name=f"{args.experiment_name}_LR{args.lr}_L{args.lambda_struct}",
-        config=config # This ensures all hyperparams are tracked in the W&B dashboard
+        save_dir=os.path.join(
+            os.environ.get("SCRATCH", "."),
+            "CE_logs",
+            "pre_wandb",
+        ),
+        config=config,  # This ensures all hyperparams are tracked in the W&B dashboard
     )
 
     # 6. Checkpoint Callback (Saves to unique folder per experiment)
-    ckpt_path = os.path.join("checkpoints", args.experiment_name)
-
     early_stopping = EarlyStopping(
         monitor="val_loss",  # Metric to monitor
         patience=10,  # Number of epochs with no improvement after which training will be stopped
@@ -71,7 +74,9 @@ def main():
         verbose=True,
     )
     checkpoint_callback = ModelCheckpoint(
-        dirpath=ckpt_path,
+        dirpath=os.path.join(
+            os.environ.get("SCRATCH", "."), "CE_logs", "pre_checkpoints", f"{args.experiment_name}"
+        ),
         filename="best-{epoch:02d}-{val_acc:.2f}",
         monitor="val_acc",
         mode="max",

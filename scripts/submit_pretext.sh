@@ -59,6 +59,4 @@ python train_pretext.py \
     --max_epochs 150 \
     --num_workers 14
 
-cp -r ./checkpoints ~/scratch/CE_logs/
-
 echo "theend"

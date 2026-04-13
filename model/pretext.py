@@ -99,6 +99,6 @@ class OntarioPretrainTask(pl.LightningModule):
             weight_decay=self.config.get("weight_decay", 1e-4),
         )
         scheduler = torch.optim.lr_scheduler.StepLR(
-            optimizer, step_size=10, gamma=0.1
+            optimizer, step_size=30, gamma=0.1
         )
-        return [optimizer], [scheduler]
+        return {"optimizer": optimizer, "lr_scheduler": scheduler}

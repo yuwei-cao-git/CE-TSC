@@ -119,6 +119,9 @@ def main():
     wandb_logger = WandbLogger(
         project="Ontario_Forest_TSC_FineTune",
         name=f"FineTune_{args.dataset}_LR{args.lr}_ENC{args.encoder}{args.emb_dims}_ECO{args.eco_emb_dim}",
+        save_dir=os.path.join(
+            os.environ.get("SCRATCH", "."), "CE_logs", "tsc_wandb"
+        ),
         config=config,
     )
     early_stopping = EarlyStopping(
@@ -129,7 +132,7 @@ def main():
     )
     checkpoint_callback = ModelCheckpoint(
         dirpath=os.path.join(
-            os.environ.get("SCRATCH", "."), "checkpoints", f"tsc_{args.dataset}"
+            os.environ.get("SCRATCH", "."), "CE_logs", "tsc_checkpoints", f"{args.dataset}"
         ),
         filename="best-tsc-{epoch:02d}-{val_r2:.3f}",
         monitor="val_r2",
