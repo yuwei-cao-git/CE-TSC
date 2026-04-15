@@ -115,11 +115,12 @@ def main():
         mapping_matrix=None,
         pretrained_path=args.pretrained_ckpt,
     )
-
+    pref="Finetune" if args.pretrained_ckpt else "TfS"
+    pref += "aligned" if args.align_head else "noaligned"
     # 3. Logger & Callbacks
     wandb_logger = WandbLogger(
         project="Ontario_Forest_TSC_FineTune",
-        name=f"FineTune_{args.dataset}_LR{args.lr}_ENC{args.encoder}{args.emb_dims}_ECO{args.eco_emb_dim}",
+        name=f"{pref}_{args.dataset}_LR{args.lr}_ENC{args.encoder}{args.emb_dims}_ECO{args.eco_emb_dim}",
         save_dir=os.path.join(
             os.environ.get("SCRATCH", "."), "CE_logs", "tsc_wandb"
         ),
