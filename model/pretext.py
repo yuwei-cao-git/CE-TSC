@@ -44,7 +44,7 @@ class OntarioPretrainTask(pl.LightningModule):
         if self.config["mode"] == "pretext_both":
             species_logits, h95_pred = self.forward(batch)
             # 2. Structural Regression Loss
-            loss_struct = self.mse_loss(h95_pred, batch["structure_label"])
+            loss_struct = self.mse_loss(h95_pred, torch.log1p(batch["structure_label"]))
             # Total Weighted Loss
             total_loss = self.lambda_struct * loss_struct
         else:
@@ -73,7 +73,7 @@ class OntarioPretrainTask(pl.LightningModule):
         val_loss = 0.0
         if self.config["mode"] == "pretext_both":
             species_logits, h95_pred = self.forward(batch)
-            loss_struct = self.mse_loss(h95_pred, batch["structure_label"])
+            loss_struct = self.mse_loss(h95_pred, torch.log1p(batch["structure_label"]))
             val_loss = self.lambda_struct * loss_struct
         else: 
             species_logits = self.forward(batch)

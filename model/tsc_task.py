@@ -32,25 +32,23 @@ class TSCTuningTask(pl.LightningModule):
             initialize_weights(self.model)
             print("--- NOTICE: No valid pre-trained path. Training FROM SCRATCH. ---")
 
-        # Metrics: Use 'global' to avoid batch-size artifacts
-        # self.val_r2 = R2Score(num_outputs=self.model_out_dim, multioutput="uniform_average")
+        # Metrics
         self.val_r2 = R2Score()
         self.val_rmse = MeanSquaredError(squared=False)
 
-        # Loss: KL Divergence is best for proportions (0.0 to 1.0)
+        # Loss
         # self.criterion = nn.KLDivLoss(reduction="batchmean")
         # self.criterion = nn.MSELoss()
         self.loss_func = config["loss_func"]
         self.weights = config["class_weights"]
 
     def forward(self, batch):
-        logits = self.model(
+        pred = self.model(
             batch["point_cloud"].transpose(1, 2),
             batch["pc_feat"].transpose(1, 2),
             batch["ecoregion"] if self.config["eco_emb_dim"] > 0 else None,
             mode="downstream",
         )
-        pred = F.softmax(logits, dim=1)
 
         self.weights = (
             self.weights.to(pred.device) if self.weights is not None else None

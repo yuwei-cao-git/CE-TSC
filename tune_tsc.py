@@ -31,6 +31,7 @@ def main():
     parser.add_argument("--num_ecoregions", type=int, default=11)
     parser.add_argument("--eco_emb_dim", type=int, default=16, help="Ecoregion embedding size")
     parser.add_argument("--replace_head", action="store_true")
+    parser.add_argument("--align_head", action="store_true")
 
     # Tuning Hyperparams
     parser.add_argument("--lr", type=float, default=1e-4, help="Lower LR for fine-tuning")
