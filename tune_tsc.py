@@ -10,7 +10,7 @@ from pytorch_lightning.callbacks import (
 )
 
 from dataset.tsc_data import TSCDataModule
-# from dataset.mapping_utils import get_mapping_matrix
+from dataset.mapping_utils import get_mapping_matrix
 from model.tsc_task import TSCTuningTask
 
 
@@ -92,16 +92,16 @@ def main():
             0.04299998,
             0.03741025,
         ]
-    if config["loss_func"] in ["wmse", "ewmse"]:
-        config["class_weights"] = torch.tensor(class_weights).float()
-    else:
-        config["class_weights"] = None
-    if config["replace_head"]:
-        config["num_species"] = len(class_weights)
+
+    config["class_weights"] = torch.tensor(class_weights).float() if config["loss_func"] in ["wmse", "ewmse"] else None
+    config["num_species"] = len(class_weights) if config["replace_head"] else 16
     # A. Determine Site Name (e.g., 'WRF') and generate mapping matrix
-    # site_key = args.dataset.split("_")[0].upper()
-    # mapping_matrix = get_mapping_matrix(site_key)
-    # print(f"--- Initializing for {site_key} with {config['num_species']} labels ---")
+    if config["replace_head"]:
+        mapping_matrix = None
+    else:
+        site_key = args.dataset.split("_")[0].upper()
+        mapping_matrix = get_mapping_matrix(site_key)
+        print(f"--- Initializing for {site_key} with {config['num_species']} labels ---")
 
     pl.seed_everything(123)
     # 1. Setup Data
@@ -112,11 +112,12 @@ def main():
     # The TSCTuningTask handles strict=False loading of the backbone
     model = TSCTuningTask(
         config=config,
-        mapping_matrix=None,
+        mapping_matrix=mapping_matrix,
         pretrained_path=args.pretrained_ckpt,
     )
     pref="Finetune" if args.pretrained_ckpt else "TfS"
-    pref += "aligned" if args.align_head else "noaligned"
+    pref += "_aligned" if args.align_head else "_noaligned"
+    pref += f"_{args.num_species}"
     # 3. Logger & Callbacks
     wandb_logger = WandbLogger(
         project="Ontario_Forest_TSC_FineTune",
