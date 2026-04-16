@@ -19,7 +19,7 @@ def main():
 
     # Data Paths
     parser.add_argument("--data_dir", type=str, required=True, help="Path to site-specific npz files")
-    parser.add_argument("--dataset", type=str, required=True, choices=["wrf_sp", "rmf_sp", "nif_sp", "ovf_sp"])
+    parser.add_argument("--dataset", type=str, required=True, choices=["wrf_sp", "rmf_sp", "nif_sp", "ovf_sub", "ovf_sp"])
 
     # Checkpoint Path (From Stage A)
     parser.add_argument("--pretrained_ckpt", type=str, default=None, help="Path to .ckpt or leave empty for scratch")
@@ -78,6 +78,9 @@ def main():
             0.19145136,
             0.07128399,
         ]
+    elif config["dataset"] == "ovf_sub":
+        class_weights = [0.02400799, 0.20773043, 0.20264791, 0.13311655, 0.12116447, 0.11122292,
+0.05007468, 0.08892794, 0.06110711]
     else:
         class_weights = [
             0.21605368,
