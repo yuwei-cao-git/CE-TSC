@@ -9,7 +9,7 @@ from pytorch_lightning.callbacks import (
     EarlyStopping,
 )
 
-from dataset.tsc_data import TSCDataModule
+from dataset.embedding import TSCDataModule
 from dataset.mapping_utils import get_mapping_matrix
 from model.tsc_task import TSCTuningTask
 
@@ -19,6 +19,7 @@ def main():
 
     # Data Paths
     parser.add_argument("--data_dir", type=str, required=True, help="Path to site-specific npz files")
+    parser.add_argument("--embedding_dir", type=str)
     parser.add_argument("--dataset", type=str, required=True, choices=["wrf_sp", "rmf_sp", "nif_sp", "ovf_sub", "ovf_sp"])
 
     # Checkpoint Path (From Stage A)
@@ -119,8 +120,10 @@ def main():
         pretrained_path=args.pretrained_ckpt,
     )
     pref="Finetune" if args.pretrained_ckpt else "TfS"
+    pref += f"_{args.mode}"
     pref += "_aligned" if args.align_head else "_noaligned"
     pref += f"_{args.num_species}"
+    pref += f"_{args.loss_func}"
     # 3. Logger & Callbacks
     wandb_logger = WandbLogger(
         project="Ontario_Forest_TSC_FineTune",
@@ -165,3 +168,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+    # # python tune_tsc.py --data_dir "/mnt/g/ovf/ovf_superpixel_dataset/" --dataset "ovf_sp" --eco_emb_dim 32 --lr 1e-3 --loss_func "ewmse" --replace_head --align_head --mode "downstream_embedding" --pretrained_ckpt "checkpoints/test/best-epoch=48-val_acc=0.62.ckpt"

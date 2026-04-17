@@ -20,7 +20,7 @@ class TSCTuningTask(pl.LightningModule):
         else:
             self.model_out_dim = mapping_matrix.shape[1] if config["replace_head"] else 16
             self.register_buffer("mapping_matrix", mapping_matrix)
-        
+
         print(f"num_species: {config['num_species']}")
 
         # Initialize Model
@@ -46,45 +46,85 @@ class TSCTuningTask(pl.LightningModule):
         self.weights = config["class_weights"]
 
     def forward(self, batch):
-        pred = self.model(
-            batch["point_cloud"].transpose(1, 2),
-            batch["pc_feat"].transpose(1, 2),
-            batch["ecoregion"] if self.config["eco_emb_dim"] > 0 else None,
-            mode="downstream",
-        )
+        if "both" in self.config.get("mode", ""):
+            dom_logits, comp_pred = self.model(
+                batch["point_cloud"].transpose(1, 2),
+                batch["pc_feat"].transpose(1, 2),
+                batch["ecoregion"] if self.config["eco_emb_dim"] > 0 else None,
+                (
+                    batch["patch_embed"]
+                    if "embedding" in self.config.get("mode", "")
+                    else None
+                ),
+                mode=self.config["mode"],
+            )
+        else:
+            comp_pred = self.model(
+                batch["point_cloud"].transpose(1, 2),
+                batch["pc_feat"].transpose(1, 2),
+                batch["ecoregion"] if self.config["eco_emb_dim"] > 0 else None,
+                (
+                    batch["patch_embed"]
+                    if "embedding" in self.config.get("mode", "")
+                    else None
+                ),
+                mode=self.config["mode"],
+            )
 
         self.weights = (
-            self.weights.to(pred.device) if self.weights is not None else None
+            self.weights.to(comp_pred.device) if self.weights is not None else None
         )
         # --- LOGIC SWITCH ---
         if self.config["replace_head"]:
             # Model output already matches site labels
-            pred_site = pred
+            pred_site = comp_pred
         else:
             # Model output is 16, must collapse via matrix
-            pred_site = torch.matmul(pred, self.mapping_matrix)
+            pred_site = torch.matmul(comp_pred, self.mapping_matrix)
             # Ensure normalization after matrix multiplication
             pred_site = pred_site / (pred_site.sum(dim=-1, keepdim=True) + 1e-10)
 
-        return pred_site
+        if "both" in self.config.get("mode", ""):
+            return dom_logits, pred_site
+        else:
+            return pred_site
 
     def training_step(self, batch, batch_idx):
-        pred_site = self.forward(batch)
+        if "both" in self.config.get("mode", ""):
+            dom_logits, pred_site = self.forward(batch)
+        else:
+            pred_site = self.forward(batch)
         # Use log_softmax for numerical stability
         # loss = self.criterion(pred_site, batch["label"])
-        loss = get_loss(self.loss_func, pred_site, batch["label"], self.weights)
+        loss_comp = get_loss(self.loss_func, pred_site, batch["label"], self.weights)
+        loss_cls = F.cross_entropy(dom_logits, torch.argmax(batch["label"], dim=1))  if self.config["mode"] == "downstream_both" else 0.0
+        loss = 0.01 * loss_cls + loss_comp
         self.log("train_loss", loss, on_step=True, on_epoch=True, prog_bar=True)
         return loss
 
     def validation_step(self, batch, batch_idx):
-        pred_site = self.forward(batch)
+        if "both" in self.config.get("mode", ""):
+            dom_logits, pred_site = self.forward(batch)
+        else:
+            pred_site = self.forward(batch)
         target = batch["label"]
+        # Use log_softmax for numerical stability
+        # loss = self.criterion(pred_site, batch["label"])
+        loss_comp = get_loss(self.loss_func, pred_site, target, self.weights)
+        loss_cls = (
+            F.cross_entropy(dom_logits, torch.argmax(target, dim=1))
+            if self.config["mode"] == "downstream_both"
+            else 0.0
+        )
+        loss = 0.01 * loss_cls + loss_comp
 
         self.val_r2.update(torch.round(pred_site, decimals=2).view(-1), target.view(-1))
         self.val_rmse.update(pred_site, target)
 
         # loss = self.criterion(pred_site, target)
-        loss = get_loss(self.loss_func, pred_site, batch["label"], self.weights)
+        self.log(
+            "val_comp_loss", loss_comp, on_epoch=True, prog_bar=True, sync_dist=True
+        )
         self.log("val_loss", loss, on_epoch=True, prog_bar=True, sync_dist=True)
 
     def on_validation_epoch_end(self):

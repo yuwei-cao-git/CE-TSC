@@ -1,5 +1,6 @@
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 
 class MSELoss(nn.Module):
     def __init__(self):
@@ -37,6 +38,11 @@ def calc_wmse_loss(valid_outputs, valid_targets, weights):
 
     return loss
 
+def calc_entropy_loss(valid_outputs, valid_targets):
+    plot_entropy = -(valid_targets * torch.log(valid_targets + 1e-8)).sum(dim=1)
+    weights = 1 + plot_entropy
+    loss = (weights[:, None] * (valid_outputs - valid_targets) ** 2).mean()
+    return loss
 
 def get_class_grw_weight(class_weight, exp_scale=0.2):
     """
@@ -57,6 +63,10 @@ def get_loss(loss_func_name, outputs, targets, weights=None):
         return calc_wmse_loss(outputs, targets, eweights)
     elif loss_func_name == "mse":
         return calc_mse_loss(outputs, targets)
+    elif loss_func_name == "smooth_l1":
+        return F.smooth_l1_loss(outputs, targets)
+    elif loss_func_name == "entropy":
+        return calc_entropy_loss(outputs, targets)
 
 
 def initialize_weights(m):
