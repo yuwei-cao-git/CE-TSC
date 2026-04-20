@@ -72,11 +72,11 @@ class PointNextOntario(nn.Module):
         encoder_backbone = encoder_fn(in_dim=in_dim)
 
         # 2. Backbone Wrapper
-        # emb_dims is the bottleneck dimension (usually 512 for S, 1024 for L)
-        self.backbone = PointNext(config["emb_dims"], encoder=encoder_backbone)
-        in_dims = 2 * config["emb_dims"]
+        # pc_emb_dims is the bottleneck dimension (usually 512 for S, 1024 for L)
+        self.backbone = PointNext(config["pc_emb_dims"], encoder=encoder_backbone)
+        in_dims = 2 * config["pc_emb_dims"]
 
-        # self.bn_out = nn.BatchNorm1d(config["emb_dims"])
+        # self.bn_out = nn.BatchNorm1d(config["pc_emb_dims"])
         self.out_norm = nn.LayerNorm(in_dims)
         self.act = nn.GELU()
 
@@ -152,7 +152,7 @@ class PointNextOntario(nn.Module):
 
         avg_pool = point_features.mean(dim=-1)
         max_pool = point_features.max(dim=-1)[0]
-        out = torch.cat([avg_pool, max_pool], dim=-1)  # (B, 2*emb_dims)
+        out = torch.cat([avg_pool, max_pool], dim=-1)  # (B, 2*pc_emb_dims)
         out = self.out_norm(out)
         out = self.act(out)
 

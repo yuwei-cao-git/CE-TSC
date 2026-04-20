@@ -88,7 +88,7 @@ class TSCDataModule(LightningDataModule):
 
         # Path where your sampled .npy files are stored
         self.embed_dir = config.get(
-            "emb_dir", "/mnt/e/ovf_img/tessera_tiles/ovf_embeddings"
+            "img_emb_dir", "/mnt/e/ovf_img/tessera_tiles/ovf_embeddings"
         )
 
         self.data_dirs = {

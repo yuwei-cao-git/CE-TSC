@@ -19,7 +19,7 @@ def main():
 
     # Data Paths
     parser.add_argument("--data_dir", type=str, required=True, help="Path to site-specific npz files")
-    parser.add_argument("--emb_dir", type=str)
+    parser.add_argument("--img_emb_dir", type=str)
     parser.add_argument("--dataset", type=str, required=True, choices=["wrf_sp", "rmf_sp", "nif_sp", "ovf_sub", "ovf_sp"])
 
     # Checkpoint Path (From Stage A)
@@ -27,7 +27,7 @@ def main():
 
     # Model Params (Must match Stage A)
     parser.add_argument("--encoder", type=str, default="b")
-    parser.add_argument("--emb_dims", type=int, default=768)
+    parser.add_argument("--pc_emb_dims", type=int, default=768)
     parser.add_argument("--num_species", type=int, default=16)
     parser.add_argument("--num_ecoregions", type=int, default=11)
     parser.add_argument("--eco_emb_dim", type=int, default=16, help="Ecoregion embedding size")
@@ -127,7 +127,7 @@ def main():
     # 3. Logger & Callbacks
     wandb_logger = WandbLogger(
         project="Ontario_Forest_TSC_FineTune",
-        name=f"{pref}_{args.dataset}_LR{args.lr}_ENC{args.encoder}{args.emb_dims}_ECO{args.eco_emb_dim}",
+        name=f"{pref}_{args.dataset}_LR{args.lr}_ENC{args.encoder}{args.pc_emb_dims}_ECO{args.eco_emb_dim}",
         save_dir=os.path.join(
             os.environ.get("SCRATCH", "."), "CE_logs", "tsc_wandb"
         ),
