@@ -53,7 +53,7 @@ class TSCTuningTask(pl.LightningModule):
                 batch["ecoregion"] if self.config["eco_emb_dim"] > 0 else None,
                 (
                     batch["patch_embed"]
-                    if "embedding" in self.config.get("mode", "")
+                    if "emb" in self.config.get("mode", "")
                     else None
                 ),
                 mode=self.config["mode"],
@@ -65,7 +65,7 @@ class TSCTuningTask(pl.LightningModule):
                 batch["ecoregion"] if self.config["eco_emb_dim"] > 0 else None,
                 (
                     batch["patch_embed"]
-                    if "embedding" in self.config.get("mode", "")
+                    if "emb" in self.config.get("mode", "")
                     else None
                 ),
                 mode=self.config["mode"],

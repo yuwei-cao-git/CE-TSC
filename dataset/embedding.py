@@ -49,11 +49,11 @@ class TSCDataset(Dataset):
         # If filename is e.g., "plot_1234.npz", we extract "1234"
         polyid = os.path.basename(self.files[idx]).replace(".npz", "")
 
-        patch_embed = torch.zeros((3, 3, 512))  # Default fallback
+        patch_embed = torch.zeros((3, 3, 128))  # Default fallback
         if self.embed_dir:
             embed_path = join(self.embed_dir, f"{polyid}.npy")
             if os.path.exists(embed_path):
-                # Load (3, 3, 512) array
+                # Load (3, 3, 128) array
                 patch_arr = np.load(embed_path)
                 patch_embed = torch.from_numpy(patch_arr).float()
 
@@ -88,7 +88,7 @@ class TSCDataModule(LightningDataModule):
 
         # Path where your sampled .npy files are stored
         self.embed_dir = config.get(
-            "embed_dir", "/mnt/e/ovf_img/tessera_tiles/plot_embeddings"
+            "emb_dir", "/mnt/e/ovf_img/tessera_tiles/ovf_embeddings"
         )
 
         self.data_dirs = {

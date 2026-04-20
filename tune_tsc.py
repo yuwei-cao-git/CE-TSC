@@ -19,7 +19,7 @@ def main():
 
     # Data Paths
     parser.add_argument("--data_dir", type=str, required=True, help="Path to site-specific npz files")
-    parser.add_argument("--embedding_dir", type=str)
+    parser.add_argument("--emb_dir", type=str)
     parser.add_argument("--dataset", type=str, required=True, choices=["wrf_sp", "rmf_sp", "nif_sp", "ovf_sub", "ovf_sp"])
 
     # Checkpoint Path (From Stage A)
@@ -168,4 +168,4 @@ def main():
 
 if __name__ == "__main__":
     main()
-    # # python tune_tsc.py --data_dir "/mnt/g/ovf/ovf_superpixel_dataset/" --dataset "ovf_sp" --eco_emb_dim 32 --lr 1e-3 --loss_func "ewmse" --replace_head --align_head --mode "downstream_embedding" --pretrained_ckpt "checkpoints/test/best-epoch=48-val_acc=0.62.ckpt"
+    # # python tune_tsc.py --data_dir "/mnt/g/ovf/ovf_superpixel_dataset/" --dataset "ovf_sp" --eco_emb_dim 32 --lr 1e-3 --loss_func "ewmse" --replace_head --align_head --mode "downstream_emb" --pretrained_ckpt "checkpoints/test/best-epoch=48-val_acc=0.62.ckpt"

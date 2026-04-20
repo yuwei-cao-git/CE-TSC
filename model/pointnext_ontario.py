@@ -87,7 +87,7 @@ class PointNextOntario(nn.Module):
             in_dims += config["eco_emb_dim"]
 
         # --- Image Embedding Handling ---
-        if "embedding" in config.get("mode", ""):
+        if "emb" in config.get("mode", ""):
             # We add a projection layer to blend the 128-dim foundation
             # features into our model's feature space
             self.img_projection = nn.Sequential(
@@ -123,7 +123,7 @@ class PointNextOntario(nn.Module):
                 )
 
         elif "downstream" in mode:
-            if mode in ["downstream", "downstream_embedding"]:
+            if mode in ["downstream", "downstream_emb"]:
                 # Standard Composition Prediction
                 self.composition_head = nn.Sequential(
                     nn.Linear(in_dims, 512),
@@ -135,7 +135,7 @@ class PointNextOntario(nn.Module):
                     nn.GELU(),
                     nn.Linear(256, num_species),
                 )
-            elif mode in ["downstream_both"]:
+            elif mode in ["downstream_both", "downstream_both_emb"]:
                 # Multi-task: Leading + Composition
                 self.mtl_head = CompositionMTLHead(in_dims, num_species)
 
@@ -182,14 +182,14 @@ class PointNextOntario(nn.Module):
             h95 = self.structure_head(out).squeeze(-1)
             return logits, h95
 
-        elif mode in ["downstream", "downstream_embedding"]:
+        elif mode in ["downstream", "downstream_emb"]:
             logits = self.composition_head(out)
             if hasattr(self, "disalign_head"):
                 logits = self.disalign_head(logits)
             # Returning Softmax for composition as it's a proportion task
             return F.softmax(logits, dim=1)
 
-        elif mode in ["downstream_both", "downstream_both_embedding"]:
+        elif mode in ["downstream_both", "downstream_both_emb"]:
             dom_logits, comp_logits = self.mtl_head(out)
             if hasattr(self, "disalign_head"):
                 dom_logits = self.disalign_head(dom_logits)
