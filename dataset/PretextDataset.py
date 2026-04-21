@@ -34,6 +34,7 @@ class OntarioPretextDataset(Dataset):
         self,
         manifest_df,
         data_root,
+        embed_dir=None,
         transform=None
     ):
         """
@@ -44,6 +45,7 @@ class OntarioPretextDataset(Dataset):
         """
         self.df = manifest_df
         self.data_root = data_root
+        self.embed_dir = embed_dir
         self.transform = transform
         self.num_points = 7168
 
@@ -56,6 +58,15 @@ class OntarioPretextDataset(Dataset):
         # 1. Load raw extracted points (centered XY, absolute Z meters)
         # Shape: (N, 3) -> [X_rel, Y_rel, Z_hag]
         pc_raw = np.load(os.path.join(self.data_root, row['relative_path'])).astype(np.float32)
+        polyid = row["relative_path"].split('/')[1]
+
+        patch_embed = torch.zeros((3, 3, 128))  # Default fallback
+        if self.embed_dir:
+            embed_path = os.path.join(self.embed_dir, f"{polyid}.npy")
+            if os.path.exists(embed_path):
+                # Load (3, 3, 128) array
+                patch_arr = np.load(embed_path)
+                patch_embed = torch.from_numpy(patch_arr).float()
 
         n_points = pc_raw.shape[0]
 
@@ -83,11 +94,12 @@ class OntarioPretextDataset(Dataset):
             "pc_feat": torch.from_numpy(feats).float(),
             "species_label": torch.tensor(
                 row["label_idx"], dtype=torch.long
-            ),  # Contiguous 0-15
+            ),
             "structure_label": torch.tensor(float(row["h95"]), dtype=torch.float),
             "ecoregion": torch.tensor(
                 row["ecoregion_idx"], dtype=torch.long
-            ),  # Contiguous 0-10
+            ),
+            "patch_embed": patch_embed,  # <--- Added to return dict
         }
 
 
@@ -98,6 +110,9 @@ class PretextDataModule(LightningDataModule):
         self.batch_size = config.get("batch_size", 32)
         self.num_workers = config.get("num_workers", 6)
         self.data_root = config["data_root"]
+        self.embed_dir = config.get(
+            "img_emb_dir", "/mnt/e/ntems_on_img/tessera_tiles/on_embeddings"
+        )
 
         # Paths to your static split files
         self.paths = {

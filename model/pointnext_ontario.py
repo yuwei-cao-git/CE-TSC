@@ -36,8 +36,6 @@ class CompositionMTLHead(nn.Module):
 
         self.dom_head = nn.Linear(256, num_species)
 
-        # self.comp_head = nn.Linear(256 + num_species, num_species)
-
         self.residual_head = nn.Sequential(
             nn.Linear(256 + num_species, 256),
             nn.LayerNorm(256),
@@ -74,7 +72,7 @@ class PointNextOntario(nn.Module):
         # 2. Backbone Wrapper
         # pc_emb_dims is the bottleneck dimension (usually 512 for S, 1024 for L)
         self.backbone = PointNext(config["pc_emb_dims"], encoder=encoder_backbone)
-        in_dims = 2 * config["pc_emb_dims"]
+        in_dims = self.config.get("pc_emb_scale") * config["pc_emb_dims"]
 
         # self.bn_out = nn.BatchNorm1d(config["pc_emb_dims"])
         self.out_norm = nn.LayerNorm(in_dims)
@@ -111,7 +109,7 @@ class PointNextOntario(nn.Module):
                 nn.GELU(),
                 nn.Linear(256, num_species),
             )
-            if mode == "pretext_both":
+            if "both" in config.get("mode", ""):
                 self.structure_head = nn.Sequential(
                     nn.Linear(in_dims, 256),
                     nn.LayerNorm(256),
@@ -150,9 +148,10 @@ class PointNextOntario(nn.Module):
         # Input: pc_feat (B, 3, N), xyz (B, 3, N)
         point_features = self.backbone(pc_feat, xyz)
 
-        avg_pool = point_features.mean(dim=-1)
-        max_pool = point_features.max(dim=-1)[0]
-        out = torch.cat([avg_pool, max_pool], dim=-1)  # (B, 2*pc_emb_dims)
+        out = point_features.mean(dim=-1)
+        if self.config.get("pc_emb_scale") == 2:
+            max_pool = point_features.max(dim=-1)[0]
+            out = torch.cat([out, max_pool], dim=-1)  # (B, 2*pc_emb_dims)
         out = self.out_norm(out)
         out = self.act(out)
 
@@ -169,13 +168,13 @@ class PointNextOntario(nn.Module):
             out = torch.cat([out, img_feat], dim=-1)  # (B, 2048)
 
         # --- 3. Branching Logic ---
-        if mode == "pretext_lsc":
+        if mode in ["pretext_lsc", "pretext_lsc_emb"]:
             logits = self.species_head(out)
             if hasattr(self, "disalign_head"):
                 logits = self.disalign_head(logits)
             return logits
 
-        elif mode == "pretext_both":
+        elif mode in ["pretext_both", "pretext_both_emb"]:
             logits = self.species_head(out)
             if hasattr(self, "disalign_head"):
                 logits = self.disalign_head(logits)

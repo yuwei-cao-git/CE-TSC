@@ -25,7 +25,7 @@ class OntarioPretrainTask(pl.LightningModule):
         # Loss Functions
         self.ce_loss = nn.CrossEntropyLoss()
 
-        if config["mode"] == "pretext_both":
+        if "both" in self.config.get("mode", ""):
             self.mse_loss = nn.MSELoss()
             # Weight for the structural regression task
             self.lambda_struct = config.get("lambda_struct", 0.5)
@@ -36,12 +36,13 @@ class OntarioPretrainTask(pl.LightningModule):
         pc_feat = batch["pc_feat"].transpose(1, 2)  # Standardized coords
         xyz = batch["point_cloud"].transpose(1, 2)  # Centered coords for grouping
         eco_idx = batch["ecoregion"] if self.config["eco_emb_dim"] > 0 else None
+        patch_emb = batch["patch_embed"] if "emb" in self.config.get("mode", "") else None
 
-        return self.model(xyz, pc_feat, eco_idx, mode=self.config["mode"])
+        return self.model(xyz, pc_feat, eco_idx, patch_emb, mode=self.config["mode"])
 
     def training_step(self, batch, batch_idx):
         total_loss = 0.0
-        if self.config["mode"] == "pretext_both":
+        if "both" in self.config.get("mode", ""):
             species_logits, h95_pred = self.forward(batch)
             # 2. Structural Regression Loss
             loss_struct = self.mse_loss(h95_pred, torch.log1p(batch["structure_label"]))
@@ -64,14 +65,14 @@ class OntarioPretrainTask(pl.LightningModule):
             sync_dist=True,
         )
         self.log("train_species_loss", loss_species, on_epoch=True, sync_dist=True)
-        if self.config["mode"] == "pretext_both":
+        if "both" in self.config.get("mode", ""):
             self.log("train_h95_rmse", torch.sqrt(loss_struct), on_epoch=True, sync_dist=True)
 
         return total_loss
 
     def validation_step(self, batch, batch_idx):
         val_loss = 0.0
-        if self.config["mode"] == "pretext_both":
+        if "both" in self.config.get("mode", ""):
             species_logits, h95_pred = self.forward(batch)
             loss_struct = self.mse_loss(h95_pred, torch.log1p(batch["structure_label"]))
             val_loss = self.lambda_struct * loss_struct
