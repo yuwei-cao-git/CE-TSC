@@ -38,6 +38,7 @@ class TSCTuningTask(pl.LightningModule):
         # Metrics
         self.val_r2 = R2Score()
         self.val_rmse = MeanSquaredError(squared=False)
+        self.best_r2 = 0.0
 
         # Loss
         # self.criterion = nn.KLDivLoss(reduction="batchmean")
@@ -130,10 +131,13 @@ class TSCTuningTask(pl.LightningModule):
     def on_validation_epoch_end(self):
         r2 = self.val_r2.compute()
         rmse = self.val_rmse.compute()
+        if r2 > self.best_r2:
+            self.best_r2 = r2
 
         # Log metrics. Clamp R2 for display, but keep raw value in WandB
         self.log("val_r2", r2, prog_bar=True, sync_dist=True)
         self.log("val_rmse", rmse, prog_bar=True, sync_dist=True)
+        self.log("best_r2", self.best_r2, prog_bar=False, sync_dist=True)
 
         self.val_r2.reset()
         self.val_rmse.reset()
