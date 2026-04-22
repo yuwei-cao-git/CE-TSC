@@ -9,7 +9,7 @@ from pytorch_lightning.callbacks import (
     EarlyStopping,
 )
 
-from dataset.embedding import TSCDataModule
+from dataset.tsc_data import TSCDataModule
 from dataset.mapping_utils import get_mapping_matrix
 from model.tsc_task import TSCTuningTask
 

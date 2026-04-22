@@ -13,7 +13,13 @@ from .data_utils import (
 
 # Hardcoded mapping for site-specific ecoregions
 # WRF, RMF -> 3E | NIF, OVF -> 5E
-SITE_ECO_MAP = {"wrf_sp": "3E", "rmf_sp": "3E", "nif_sp": "5E", "ovf_sp": "5E"}
+SITE_ECO_MAP = {
+    "wrf_sp": "3E",
+    "rmf_sp": "3E",
+    "nif_sp": "5E",
+    "ovf_sp": "5E",
+    "ovf_sub": "5E",
+}
 
 # Must match your Pre-training index exactly
 ONTARIO_ECOREGIONS = ["2E", "2W", "3E", "3S", "3W", "4E", "4S", "4W", "5E", "5S", "6E"]
@@ -21,11 +27,12 @@ ECO_TO_IDX = {name: i for i, name in enumerate(ONTARIO_ECOREGIONS)}
 
 
 class TSCDataset(Dataset):
-    def __init__(self, files, dataset_name, transform=None):
+    def __init__(self, files, dataset_name, embed_dir=None, transform=None):
         self.files = files
         self.transform = transform
+        self.embed_dir = embed_dir
 
-        # Determine ecoregion index from the site name
+        # Determine ecoregion index
         eco_str = SITE_ECO_MAP.get(dataset_name, "3E")
         self.eco_idx = ECO_TO_IDX.get(eco_str, 0)
 
@@ -33,9 +40,23 @@ class TSCDataset(Dataset):
         return len(self.files)
 
     def __getitem__(self, idx):
+        # Load point cloud data
         data = np.load(self.files[idx], allow_pickle=True)
-        coords = data["point_cloud"]  # (N, 3)
-        label = data["label"]  # (num_species,)
+        coords = data["point_cloud"]
+        label = data["label"]
+
+        # --- NEW: Load Patch Embedding ---
+        # Assuming the .npz filename is 'POLYID.npz' or it has a 'polyid' key
+        # If filename is e.g., "plot_1234.npz", we extract "1234"
+        polyid = os.path.basename(self.files[idx]).replace(".npz", "")
+
+        patch_embed = torch.zeros((3, 3, 128))  # Default fallback
+        if self.embed_dir:
+            embed_path = join(self.embed_dir, f"{polyid}.npy")
+            if os.path.exists(embed_path):
+                # Load (3, 3, 128) array
+                patch_arr = np.load(embed_path)
+                patch_embed = torch.from_numpy(patch_arr).float()
 
         # 1. Height-preserving centering
         pc = center_point_cloud(coords)
@@ -43,18 +64,18 @@ class TSCDataset(Dataset):
         # 2. Features: Normalized coordinates
         feats = normalize_point_cloud(pc)
 
-        # 3. Apply the same Stage A transformations
+        # 3. Apply transformations
         if self.transform:
-            # Reusing your pointCloudTransform function
             pc, feats, label = forest_pretext_transform(
                 pc, pc_feat=feats, target=label, rot=False
             )
 
         return {
             "point_cloud": torch.from_numpy(pc).float(),
-            "pc_feat": torch.from_numpy(feats).float(), 
+            "pc_feat": torch.from_numpy(feats).float(),
             "label": torch.from_numpy(label).float(),
             "ecoregion": torch.tensor(self.eco_idx, dtype=torch.long),
+            "patch_embed": patch_embed,  # <--- Added to return dict
         }
 
 
@@ -63,10 +84,14 @@ class TSCDataModule(LightningDataModule):
         super().__init__()
         self.config = config
         self.batch_size = config["batch_size"]
-        self.num_workers = 2 #config.get("num_workers", 6)
-
-        # Site name (e.g. 'wrf_sp') used for ecoregion mapping
+        self.num_workers = 2
         self.dataset_name = config["dataset"]
+
+        # Path where your sampled .npy files are stored
+        self.embed_dir = config.get(
+            "img_emb_dir",
+            f"./data/{self.dataset_name.split('_')[0]}_img/tessera_tiles/{self.dataset_name.split('_')[0]}_embeddings",
+        )
 
         self.data_dirs = {
             "train": join(config["data_dir"], "tile_128", "train", self.dataset_name),
@@ -90,21 +115,23 @@ class TSCDataModule(LightningDataModule):
             train_files = self._get_files("train")
             val_files = self._get_files("val")
 
-            # Clean Dataset
-            train_ds = TSCDataset(train_files, self.dataset_name)
-
-            # Augmented Dataset (Site-specific tuning often needs more augs)
-            aug_ds = TSCDataset(
-                train_files,
-                self.dataset_name,
-                transform=True,
+            # Pass embed_dir to datasets
+            train_ds = TSCDataset(
+                train_files, self.dataset_name, embed_dir=self.embed_dir
             )
-            self.train_dataset = ConcatDataset([train_ds, aug_ds])
+            aug_ds = TSCDataset(
+                train_files, self.dataset_name, embed_dir=self.embed_dir, transform=True
+            )
 
-            self.val_dataset = TSCDataset(val_files, self.dataset_name)
+            self.train_dataset = ConcatDataset([train_ds, aug_ds])
+            self.val_dataset = TSCDataset(
+                val_files, self.dataset_name, embed_dir=self.embed_dir
+            )
 
         if stage == "test" or stage is None:
-            self.test_dataset = TSCDataset(self._get_files("test"), self.dataset_name)
+            self.test_dataset = TSCDataset(
+                self._get_files("test"), self.dataset_name, embed_dir=self.embed_dir
+            )
 
     def train_dataloader(self):
         return DataLoader(

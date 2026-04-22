@@ -56,7 +56,7 @@ python train_pretext.py \
     --dataset "wrf_sp" \
     --data_dir "./data/wrf_superpixel_dataset" \
     --lr 0.0001 \
-    --emb_dims $CUR_EMB \
+    --pc_emb_dims $CUR_EMB \
     --encoder $CUR_ENC \
     --batch_size 128 \
     --max_epochs 200 \
