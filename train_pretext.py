@@ -66,7 +66,7 @@ def main():
     # 5. Setup W&B Logger (Logs the args automatically)
     wandb_logger = WandbLogger(
         project=config["project_name"],
-        name=f"{args.experiment_name}_{args.encoder}{args.pc_emb_dims}_{args.mode}_LR{args.lr}_L{args.lambda_struct}",
+        name=f"{args.experiment_name}_{args.encoder}{args.pc_emb_dims}_img{args.img_emb_dims}_{args.mode}_LR{args.lr}_L{args.lambda_struct}",
         save_dir=os.path.join(
             os.environ.get("SCRATCH", "."),
             "CE_logs",

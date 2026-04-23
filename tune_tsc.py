@@ -129,10 +129,8 @@ def main():
     # 3. Logger & Callbacks
     wandb_logger = WandbLogger(
         project="Ontario_Forest_TSC_FineTune",
-        name=f"{pref}_{args.dataset}_LR{args.lr}_ENC{args.encoder}{args.pc_emb_dims}_ECO{args.eco_emb_dim}",
-        save_dir=os.path.join(
-            os.environ.get("SCRATCH", "."), "CE_logs", "tsc_wandb"
-        ),
+        name=f"{pref}_{args.dataset}_LR{args.lr}_ENC{args.encoder}{args.pc_emb_dims}_img{args.img_emb_dims}_ECO{args.eco_emb_dim}",
+        save_dir=os.path.join(os.environ.get("SCRATCH", "."), "CE_logs", "tsc_wandb"),
         config=config,
     )
     early_stopping = EarlyStopping(

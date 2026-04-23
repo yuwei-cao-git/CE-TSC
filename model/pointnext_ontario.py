@@ -88,7 +88,7 @@ class PointNextOntario(nn.Module):
         if "emb" in config.get("mode", "") and config.get("img_emb_dims", 0) > 128:
             # We add a projection layer to blend the 128-dim foundation
             # features into our model's feature space
-            self.img_projection = nn.Sequential(nn.Linear(128, 512), nn.LayerNorm(512), nn.GELU(), nn.Dropout(0.1))
+            self.img_projection = nn.Sequential(nn.Linear(128, config.get("img_emb_dims")), nn.LayerNorm(config.get("img_emb_dims")), nn.GELU(), nn.Dropout(0.1))
         in_dims += config.get("img_emb_dims", 0)  # Final head input will be 1536 + 512 = 2048
 
         if config.get("align_head", False):
