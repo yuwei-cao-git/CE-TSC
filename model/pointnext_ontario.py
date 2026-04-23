@@ -85,13 +85,11 @@ class PointNextOntario(nn.Module):
             in_dims += config["eco_emb_dim"]
 
         # --- Image Embedding Handling ---
-        if "emb" in config.get("mode", ""):
+        if "emb" in config.get("mode", "") and config.get("img_emb_dims", 0) > 128:
             # We add a projection layer to blend the 128-dim foundation
             # features into our model's feature space
-            self.img_projection = nn.Sequential(
-                nn.Linear(128, 512), nn.LayerNorm(512), nn.GELU(), nn.Dropout(0.1)
-            )
-            in_dims += 512  # Final head input will be 1536 + 512 = 2048
+            self.img_projection = nn.Sequential(nn.Linear(128, 512), nn.LayerNorm(512), nn.GELU(), nn.Dropout(0.1))
+        in_dims += config.get("img_emb_dims", 0)  # Final head input will be 1536 + 512 = 2048
 
         if config.get("align_head", False):
             self.disalign_head = LogitAlignmentHead(num_species, num_species)
@@ -160,12 +158,13 @@ class PointNextOntario(nn.Module):
             eco_feat = self.eco_embedding(eco_idx)
             out = torch.cat([out, eco_feat], dim=-1)
         # 2. Image Feature Injection
-        if patch_embed is not None and hasattr(self, "img_projection"):
+        if patch_embed is not None:
             # patch_embed is (B, 3, 3, 128)
             # Pool spatial grid: (B, 3, 3, 128) -> (B, 128)
             img_vec = patch_embed.mean(dim=(1, 2))
-            img_feat = self.img_projection(img_vec)  # (B, 512)
-            out = torch.cat([out, img_feat], dim=-1)  # (B, 2048)
+            if self.config.get("img_emb_dims", 0) > 128:
+                img_vec = self.img_projection(img_vec)  # (B, 512)
+            out = torch.cat([out, img_vec], dim=-1)  # (B, 2048)
 
         # --- 3. Branching Logic ---
         if mode in ["pretext_lsc", "pretext_lsc_emb"]:

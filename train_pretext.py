@@ -34,6 +34,7 @@ def main():
     parser.add_argument("--encoder", type=str, default="b", choices=["s", "b", "l", "xl"])
     parser.add_argument("--pc_emb_dims", type=int, default=512, help="Latent dimension of backbone")
     parser.add_argument("--pc_emb_scale", type=int, default=2)
+    parser.add_argument("--img_emb_dims", type=int, default=128)
     parser.add_argument("--num_species", type=int, default=16)
     parser.add_argument("--num_ecoregions", type=int, default=11)
     parser.add_argument("--eco_emb_dim", type=int, default=16, help="Ecoregion embedding size")
