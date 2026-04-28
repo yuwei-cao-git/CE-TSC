@@ -27,10 +27,12 @@ ECO_TO_IDX = {name: i for i, name in enumerate(ONTARIO_ECOREGIONS)}
 
 
 class TSCDataset(Dataset):
-    def __init__(self, files, dataset_name, embed_dir=None, transform=None):
+
+    def __init__(self, files, dataset_name, rotate=False, embed_dir=None, transform=None):
         self.files = files
         self.transform = transform
         self.embed_dir = embed_dir
+        self.rotation = rotate
 
         # Determine ecoregion index
         eco_str = SITE_ECO_MAP.get(dataset_name, "3E")
@@ -67,7 +69,7 @@ class TSCDataset(Dataset):
         # 3. Apply transformations
         if self.transform:
             pc, feats, label = forest_pretext_transform(
-                pc, pc_feat=feats, target=label, rot=False
+                pc, pc_feat=feats, target=label, rot=self.rotation
             )
 
         return {

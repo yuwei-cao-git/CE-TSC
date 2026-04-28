@@ -154,7 +154,7 @@ def forest_pretext_transform(xyz, pc_feat=None, target=None, rot=True):
     aug_xyz, aug_feats = random_scale(aug_xyz, x=aug_feats)
     aug_xyz, aug_feats = point_translate(aug_xyz, x=aug_feats)
     if rot:
-        aug_xyz, aug_feats = rotate_z_only(aug_xyz, x=aug_feats)
+        aug_xyz, aug_feats = rotate_z_only(aug_xyz, feats=aug_feats)
 
     target = target
 

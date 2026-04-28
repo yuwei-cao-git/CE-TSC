@@ -145,11 +145,11 @@ class TSCTuningTask(pl.LightningModule):
     def configure_optimizers(self):
         # Use AdamW with a slightly higher weight decay for fine-tuning
         optimizer = torch.optim.AdamW(
-            self.parameters(), lr=self.config.get("lr", 1e-4), weight_decay=0.0001
+            self.parameters(), lr=self.config.get("lr", 1e-4), weight_decay=0.05
         )
 
         # scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode="min", factor=0.5, patience=3, min_lr=1e-6)
         # return {"optimizer": optimizer,"lr_scheduler": {"scheduler": scheduler, "monitor": "val_loss"}}
 
-        scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=10, gamma=0.1)
+        scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=30, gamma=0.1)
         return {"optimizer": optimizer, "lr_scheduler": scheduler}
