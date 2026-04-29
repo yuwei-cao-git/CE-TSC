@@ -39,6 +39,8 @@ class TSCTuningTask(pl.LightningModule):
         self.val_r2 = R2Score()
         self.val_rmse = MeanSquaredError(squared=False)
         self.best_r2 = 0.0
+        self.test_r2 = R2Score()
+        self.test_rmse = MeanSquaredError(squared=False)
 
         # Loss
         # self.criterion = nn.KLDivLoss(reduction="batchmean")
@@ -141,6 +143,43 @@ class TSCTuningTask(pl.LightningModule):
 
         self.val_r2.reset()
         self.val_rmse.reset()
+
+    def test_step(self, batch, batch_idx):
+        if "both" in self.config.get("mode", ""):
+            dom_logits, pred_site = self.forward(batch)
+        else:
+            pred_site = self.forward(batch)
+
+        target = batch["label"]
+
+        # Calculate losses
+        loss_comp = get_loss(self.loss_func, pred_site, target, self.weights)
+        loss_cls = (
+            F.cross_entropy(dom_logits, torch.argmax(target, dim=1))
+            if self.config["mode"] == "downstream_both"
+            else 0.0
+        )
+        loss = 0.01 * loss_cls + loss_comp
+
+        # Update metric objects (assuming self.test_r2/rmse exist in __init__)
+        self.test_r2.update(torch.round(pred_site, decimals=2).view(-1), target.view(-1))
+        self.test_rmse.update(pred_site, target)
+
+        self.log("test_comp_loss", loss_comp, on_epoch=True, prog_bar=True, sync_dist=True)
+        self.log("test_loss", loss, on_epoch=True, prog_bar=True, sync_dist=True)
+        return loss
+
+    def on_test_epoch_end(self):
+        # Compute final metrics for the test set
+        test_r2 = self.test_r2.compute()
+        test_rmse = self.test_rmse.compute()
+
+        self.log("test_r2", test_r2, prog_bar=True, sync_dist=True)
+        self.log("test_rmse", test_rmse, prog_bar=True, sync_dist=True)
+
+        # Reset for future runs
+        self.test_r2.reset()
+        self.test_rmse.reset()
 
     def configure_optimizers(self):
         # Use AdamW with a slightly higher weight decay for fine-tuning

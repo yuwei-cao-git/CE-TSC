@@ -92,6 +92,32 @@ class OntarioPretrainTask(pl.LightningModule):
             self.log("val_h95_rmse", torch.sqrt(loss_struct), on_epoch=True, sync_dist=True)
 
         return val_loss
+    
+    def test_step(self, batch, batch_idx):
+        test_loss = 0.0
+        if "both" in self.config.get("mode", ""):
+            species_logits, h95_pred = self.forward(batch)
+            # Assuming you want to keep the same log1p transformation for consistency
+            loss_struct = self.mse_loss(h95_pred, torch.log1p(batch["structure_label"]))
+            test_loss = self.lambda_struct * loss_struct
+        else: 
+            species_logits = self.forward(batch)
+
+        loss_species = self.ce_loss(species_logits, batch["species_label"])
+        test_loss += loss_species
+
+        # Calculate Accuracy
+        preds = torch.argmax(species_logits, dim=1)
+        acc = (preds == batch["species_label"]).float().mean()
+
+        # Log with test_ prefix
+        self.log("test_loss", test_loss, on_epoch=True, prog_bar=True, sync_dist=True)
+        self.log("test_acc", acc, on_epoch=True, prog_bar=True, sync_dist=True)
+        
+        if self.config["mode"] == "pretext_both":
+            self.log("test_h95_rmse", torch.sqrt(loss_struct), on_epoch=True, sync_dist=True)
+
+        return test_loss
 
     def configure_optimizers(self):
         optimizer = optim.AdamW(
