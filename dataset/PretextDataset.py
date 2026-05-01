@@ -110,9 +110,7 @@ class PretextDataModule(LightningDataModule):
         self.batch_size = config.get("batch_size", 32)
         self.num_workers = config.get("num_workers", 6)
         self.data_root = config["data_root"]
-        self.embed_dir = config.get(
-            "img_emb_dir", "/mnt/e/ntems_on_img/tessera_tiles/on_embeddings"
-        )
+        self.embed_dir = config.get("img_emb_dir")
 
         # Paths to your static split files
         self.paths = {

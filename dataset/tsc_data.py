@@ -90,10 +90,7 @@ class TSCDataModule(LightningDataModule):
         self.dataset_name = config["dataset"]
 
         # Path where your sampled .npy files are stored
-        self.embed_dir = config.get(
-            "img_emb_dir",
-            f"./data/{self.dataset_name.split('_')[0]}_img/tessera_tiles/{self.dataset_name.split('_')[0]}_embeddings",
-        )
+        self.embed_dir = config.get("img_emb_dir")
 
         self.data_dirs = {
             "train": join(config["data_dir"], "tile_128", "train", self.dataset_name),

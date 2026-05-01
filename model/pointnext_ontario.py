@@ -158,7 +158,7 @@ class PointNextOntario(nn.Module):
             eco_feat = self.eco_embedding(eco_idx)
             out = torch.cat([out, eco_feat], dim=-1)
         # 2. Image Feature Injection
-        if patch_embed is not None:
+        if patch_embed is not None and self.config.get("img_emb_dims", 0) > 0:
             # patch_embed is (B, 3, 3, 128)
             # Pool spatial grid: (B, 3, 3, 128) -> (B, 128)
             img_vec = patch_embed.mean(dim=(1, 2))
