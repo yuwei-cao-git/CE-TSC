@@ -121,7 +121,7 @@ def main():
         mapping_matrix=mapping_matrix,
         pretrained_path=args.pretrained_ckpt,
     )
-    pref = f"FT_pre_{args.pretrained_ckpt.split('_')[2]}" if args.pretrained_ckpt else "TfS"
+    pref = f"FT_pre_{args.pretrained_ckpt.split('/')[-2]}" if args.pretrained_ckpt else "TfS"
     pref += f"_{args.mode}"
     pref += "_aligned" if args.align_head else "_noaligned"
     pref += f"_{args.loss_func}"
@@ -140,7 +140,11 @@ def main():
     )
     checkpoint_callback = ModelCheckpoint(
         dirpath=os.path.join(
-            os.environ.get("SCRATCH", "."), "CE_logs", "tsc_checkpoints", f"{args.dataset}"
+            os.environ.get("SCRATCH", "."),
+            "CE_logs",
+            "tsc_checkpoints",
+            f"{args.dataset}",
+            f"{pref}_{args.num_species}_LR{args.lr}_ENC{args.encoder}{args.pc_emb_dims}_img{args.img_emb_dims}_ECO{args.eco_emb_dim}",
         ),
         filename="best-tsc-{epoch:02d}-{val_r2:.3f}",
         monitor="val_r2",
